@@ -1,0 +1,94 @@
+def estraiDatiObisM_b64(b64, estensione):
+    """8
+    Estrae i dati presenti in un documento Obis M (myBiros) a partire da una stringa base64.
+    - DEFAULT: per ogni campo seleziona l'elemento con id più piccolo (min)
+    """
+
+    url = "https://platform.mybiros.com/api/v1/inference/service/5f6f8a6c-ac77-4044-9ec7-eb491ef95f15/predict"
+    headers = {
+        "x-api-key": "7qdVqGJWylEEUAW4KY9HbWkd3AKJ2VKeTF8DTvcW",
+        "Accept": "application/json"
+    }
+    params = {
+        "include": ["service_fields"],
+        "document_details": "pages"
+    }
+
+    # prepara file da base64
+    file_bytes = base64.b64decode(b64)
+    f = io.BytesIO(file_bytes)
+    f.name = "documento." + estensione
+
+    mime = (mimetype_file.get(estensione)
+            if 'mimetype_file' in globals() and isinstance(mimetype_file, dict)
+            else "application/octet-stream")
+
+    files = {
+        "file": (f.name, f, mime),
+        "push_result_on_platform": (None, "never")
+    }
+
+    response = requests.post(url, headers=headers, params=params, files=files)
+
+    if response.status_code != 200:
+        return False
+
+    response = response.json()
+
+    print(response)
+
+    output = []
+    service_fields = response.get("service_fields", {})
+    doc_pages = response.get("document_pages", [])
+
+    #Agregazione dei valori per tutte le pagine
+    all_values_by_field = {}
+    for field_name in service_fields.keys():
+        acc = []
+        for page in doc_pages:
+            vals = (page.get("entities", {}) or {}).get(field_name, [])
+            if vals:
+                acc.extend(vals)
+        all_values_by_field[field_name] = acc
+
+    # loop per pagina (struttura invariata)
+    for page in doc_pages:
+        entities = page.get("entities", {})
+        page_out = []
+
+        for field_name, meta in service_fields.items():
+            alias = meta.get("tag_alias", field_name)
+
+            #valori GLOBALI del campo (non quelli della singola pagina)
+            values = all_values_by_field.get(field_name, [])
+            if not values:
+                continue
+
+            # default: min id
+            mode = "min"
+
+            # eccezioni specifiche per alias
+            #in questo caso il netto pensione va escluso il valore della tredicesima che abbiamo visto che 
+            #e' sempre alla fine (destra) del documento
+
+            if alias == "Obis Netto Pensione":
+                mode = "max-1"
+
+            chosen = _pick_by_id(values, mode)
+
+            if chosen:
+                page_out.append({
+                    "campo": field_name,
+                    "tipo": alias,
+                    "valore": chosen.get("text"),
+                    "confidence": chosen.get("confidence"),
+                    "id": chosen.get("id")
+                })
+
+                page_out.append(calcola_valore_netto_OBIS(response, "netto_obis", "Netto OBIS"))
+
+        #Obis Mensilita' è il tag = id_number_11, se e' contenuto allora procedo nell'append.
+        if (entities.get("id_number_11") and len(entities.get("id_number_11")) > 0):
+            output.append(page_out)
+
+    return output
