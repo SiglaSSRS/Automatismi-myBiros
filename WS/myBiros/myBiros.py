@@ -44,12 +44,6 @@ mimetype_b64 = { # mimetype dei file accettati (da base64)
 ###   CUD  ###########################################
 
 def estraiDatiCUD_file(file):
-    """
-    Estrae i dati presenti in una busta paga, a partire dal percorso del file.
-
-    :param str file: percorso del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/c0863db3-cb42-4a5c-8a34-66e47d447727/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "FNsVmzYR2OHNPX-Ozvy6i9FI52nss4BZMeUUuEk6", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -77,13 +71,6 @@ def estraiDatiCUD_file(file):
     else: return False, ret
 
 def estraiDatiCUD_b64(b64, estensione):
-    """
-    Estrae i dati presenti in una busta paga, a partire da una stringa in base64.
-
-    :param str b64: stringa base64 del file
-    :param str estensione: estensione del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/c0863db3-cb42-4a5c-8a34-66e47d447727/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "FNsVmzYR2OHNPX-Ozvy6i9FI52nss4BZMeUUuEk6", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -117,12 +104,6 @@ def estraiDatiCUD_b64(b64, estensione):
 ###   F24  ###########################################
 
 def estraiDatiF24_file(file):
-    """
-    Estrae i dati presenti in una busta paga, a partire dal percorso del file.
-
-    :param str file: percorso del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/c0863db3-cb42-4a5c-8a34-66e47d447727/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "FNsVmzYR2OHNPX-Ozvy6i9FI52nss4BZMeUUuEk6", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -150,13 +131,6 @@ def estraiDatiF24_file(file):
     else: return False, ret
 
 def estraiDatiF24_b64(b64, estensione):
-    """
-    Estrae i dati presenti in una busta paga, a partire da una stringa in base64.
-
-    :param str b64: stringa base64 del file
-    :param str estensione: estensione del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/c0863db3-cb42-4a5c-8a34-66e47d447727/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "FNsVmzYR2OHNPX-Ozvy6i9FI52nss4BZMeUUuEk6", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -189,12 +163,6 @@ def estraiDatiF24_b64(b64, estensione):
 ###   CERTIFICATO STIPENDIO  ###########################################
 
 def estraiDatiCertificatoStipendio_file(file):
-    """
-    Estrae i dati presenti in una busta paga, a partire dal percorso del file.
-
-    :param str file: percorso del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/169d8ed6-1b81-4437-9a9f-874d0e8df02a/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "EyeqzIyB1hWcWzCL0VZlCKmyOf1ZQZyCM5FQgSla", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -222,13 +190,6 @@ def estraiDatiCertificatoStipendio_file(file):
     else: return False, ret
 
 def estraiDatiCertificatoStipendio_b64(b64, estensione):
-    """
-    Estrae i dati presenti in una busta paga, a partire da una stringa in base64.
-
-    :param str b64: stringa base64 del file
-    :param str estensione: estensione del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/169d8ed6-1b81-4437-9a9f-874d0e8df02a/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "EyeqzIyB1hWcWzCL0VZlCKmyOf1ZQZyCM5FQgSla", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -262,12 +223,6 @@ def estraiDatiCertificatoStipendio_b64(b64, estensione):
 ###   MERITO CREDITIZIO  ###########################################
 
 def estraiDatiMeritoCreditizio_file(file):
-    """
-    Estrae i dati presenti in una busta paga, a partire dal percorso del file.
-
-    :param str file: percorso del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/ce5d1566-2481-4d2e-9bb7-fbb9a68face5/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "2i3sqce_dH7mU18PzekHTlxiz9mlNvWt-EwB5ZJ9", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -295,13 +250,6 @@ def estraiDatiMeritoCreditizio_file(file):
     else: return False, ret
 
 def estraiDatiMeritoCreditizio_b64(b64, estensione):
-    """
-    Estrae i dati presenti in una busta paga, a partire da una stringa in base64.
-
-    :param str b64: stringa base64 del file
-    :param str estensione: estensione del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/ce5d1566-2481-4d2e-9bb7-fbb9a68face5/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "2i3sqce_dH7mU18PzekHTlxiz9mlNvWt-EwB5ZJ9", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -335,12 +283,6 @@ def estraiDatiMeritoCreditizio_b64(b64, estensione):
 ###   CEDOLINO PENSIONE  ###########################################
 
 def estraiDatiCedolinoPensione_file(file):
-    """
-    Estrae i dati presenti in una busta paga, a partire dal percorso del file.
-
-    :param str file: percorso del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/e15577b7-206e-4dd7-816e-36728d5885a8/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "LfnS82Mf_xOlqI9jLMvkNJItlYg-nBLT4cgPdr6r", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -368,13 +310,6 @@ def estraiDatiCedolinoPensione_file(file):
     else: return False, ret
 
 def estraiDatiCedolinoPensione_b64(b64, estensione):
-    """
-    Estrae i dati presenti in una busta paga, a partire da una stringa in base64.
-
-    :param str b64: stringa base64 del file
-    :param str estensione: estensione del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/e15577b7-206e-4dd7-816e-36728d5885a8/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "LfnS82Mf_xOlqI9jLMvkNJItlYg-nBLT4cgPdr6r", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -407,12 +342,6 @@ def estraiDatiCedolinoPensione_b64(b64, estensione):
 ###   PRIVACY ESTESA  ###########################################
 
 def estraiDatiPrivacyEstesa_file(file):
-    """
-    Estrae i dati presenti in una busta paga, a partire dal percorso del file.
-
-    :param str file: percorso del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/c636d7e0-5dc5-4d22-b7ad-2d44b4bfea20/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "oj94WWaIAav4wSU4ehfx7e-tpex1fH9KNd4baHrf", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -440,13 +369,6 @@ def estraiDatiPrivacyEstesa_file(file):
     else: return False, ret
 
 def estraiDatiPrivacyEstesa_b64(b64, estensione):
-    """
-    Estrae i dati presenti in una busta paga, a partire da una stringa in base64.
-
-    :param str b64: stringa base64 del file
-    :param str estensione: estensione del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/c636d7e0-5dc5-4d22-b7ad-2d44b4bfea20/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "oj94WWaIAav4wSU4ehfx7e-tpex1fH9KNd4baHrf", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -479,12 +401,6 @@ def estraiDatiPrivacyEstesa_b64(b64, estensione):
 ###   B U S T A   P A G A   ###########################################
 
 def estraiDatiBustaPaga_file(file):
-    """
-    Estrae i dati presenti in una busta paga, a partire dal percorso del file.
-
-    :param str file: percorso del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/cb2f96d2-a8f2-4538-bba3-363c0b74a0d4/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "oJBu6EAh--QZ450BuRY4WjvS1T57KP6YKkwv41wx", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -513,13 +429,6 @@ def estraiDatiBustaPaga_file(file):
     else: return False, ret
 
 def estraiDatiBustaPaga_b64(b64, estensione):
-    """
-    Estrae i dati presenti in una busta paga, a partire da una stringa in base64.
-
-    :param str b64: stringa base64 del file
-    :param str estensione: estensione del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/cb2f96d2-a8f2-4538-bba3-363c0b74a0d4/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "oJBu6EAh--QZ450BuRY4WjvS1T57KP6YKkwv41wx", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -554,12 +463,6 @@ def estraiDatiBustaPaga_b64(b64, estensione):
 ###   D O C U M E N T I   D ' I D E N T I T A '   #####################
 
 def estraiDatiDocumento_file(file):
-    """
-    Estrae i dati presenti in un set di documenti d'identità, a partire dal percorso del file.
-
-    :param str file: percorso del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/7471fd22-ee8d-4512-b77b-642dec127574/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "CDtFLxF5SQ2geVwjMb8JQiUGVGgOeAUapz1fpc_4", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -587,13 +490,6 @@ def estraiDatiDocumento_file(file):
     else: return False, ret
 
 def estraiDatiDocumento_b64(b64, estensione):
-    """
-    Estrae i dati presenti in un set di documenti d'identità, a partire da una stringa in base64.
-
-    :param str b64: stringa base64 del file
-    :param str estensione: estensione del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/7471fd22-ee8d-4512-b77b-642dec127574/predict" # include il Service ID del caso d'uso
     headers = {"x-api-key": "CDtFLxF5SQ2geVwjMb8JQiUGVGgOeAUapz1fpc_4", "Accept": "application/json"} # include l'API Key del caso d'uso
@@ -669,12 +565,6 @@ def calcola_valore_netto_OBIS(ret, campo, tipo, confidence=99.8):
     return risultato_json
 
 def estraiDatiObisM_file(file):
-    """
-    Estrae i dati presenti in un documento Obis M, a partire dal percorso del file.
-
-    :param str file: percorso del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/5f6f8a6c-ac77-4044-9ec7-eb491ef95f15/predict"
     headers = {"x-api-key": "7qdVqGJWylEEUAW4KY9HbWkd3AKJ2VKeTF8DTvcW", "Accept": "application/json"}
@@ -708,13 +598,6 @@ def estraiDatiObisM_file(file):
     else: return False, ret
 
 def estraiDatiObisM_b64(b64, estensione):
-    """
-    Estrae i dati presenti in un documento Obis M, a partire da una stringa in base64.
-
-    :param str b64: stringa base64 del file
-    :param str estensione: estensione del file
-    :return: list con le pensioni presenti nel documento, False in caso di errore
-    """
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/5f6f8a6c-ac77-4044-9ec7-eb491ef95f15/predict"
     headers = {"x-api-key": "7qdVqGJWylEEUAW4KY9HbWkd3AKJ2VKeTF8DTvcW", "Accept": "application/json"}

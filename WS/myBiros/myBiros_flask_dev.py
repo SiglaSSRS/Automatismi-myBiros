@@ -1,5 +1,6 @@
 ###   I M P O R T   ###################################################
 
+#Da togliere per deploy
 import sys
 sys.path.insert(0, r"C:\Projects\Automatismi\WS\SugarCRM")  # parent
 
@@ -87,6 +88,7 @@ Path(attachDir).mkdir(parents = True, exist_ok = True) # se non esiste, viene cr
 #PAT = PATENTE
 #PAS = PASSAPORTO
 #TS  = TESSERA SANITARIA
+#PS  = PERMESSO DI SOGGIORNO
 
 #OBIS= OBIS
 #BP  = BUSTA PAGA
@@ -96,6 +98,7 @@ Path(attachDir).mkdir(parents = True, exist_ok = True) # se non esiste, viene cr
 #MC:   MERITO CREDITIZIO
 #CS:   CERTIFICATO PENSIONE
 #CUD:  CUD
+#F24:  F24
 
 #---------------------------------------------------------------------------------
 
