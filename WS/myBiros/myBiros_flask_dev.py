@@ -402,7 +402,7 @@ def aggiornaCRM(id, ret):
     logger.info(f"Valore di ret      in aggiornaCRM: {ret}")
     logger.info(f"Valore di conf_map in aggiornaCRM: {conf_map}")
 
-    print(ret)
+    #print(ret)
 
     if category_field:
         category_val = str(category_field["valore"]).strip().lower()
