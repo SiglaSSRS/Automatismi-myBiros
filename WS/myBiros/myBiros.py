@@ -41,28 +41,6 @@ mimetype_b64 = { # mimetype dei file accettati (da base64)
     "/9j/":         "image/jpeg"
 }
 
-#Ordina una lista di dizionari in base al campo 'id' e ne seleziona uno in base alla modalità specificata.
-def _pick_by_id(items, mode="min"):
-    """
-    Seleziona un elemento ordinando per 'id'.
-    mode: "min", "max", "max-1"/"penultimo", oppure un int (es. -2).
-    Gli item senza 'id' vanno in coda.
-    """
-    if not items:
-        return None
-    ordered = sorted(items, key=lambda x: (x.get("id") is None, x.get("id", 10**9)))
-    if mode == "min":
-        return ordered[0]
-    if mode == "max":
-        return ordered[-1]
-    if mode in ("max-1", "penultimo"):
-        return ordered[-2] if len(ordered) >= 2 else ordered[-1]
-    if isinstance(mode, int):
-        idx = mode if mode >= 0 else len(ordered) + mode
-        return ordered[idx] if 0 <= idx < len(ordered) else ordered[-1]
-    return ordered[0] 
-
-
 ###   CUD  ###########################################
 
 def estraiDatiCUD_file(file):
@@ -80,6 +58,8 @@ def estraiDatiCUD_file(file):
         files = {"file": (file, f, mimetypes.guess_type(file)[0]),"push_result_on_platform": (None, "never")}
         response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
 
@@ -93,8 +73,8 @@ def estraiDatiCUD_file(file):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 def estraiDatiCUD_b64(b64, estensione):
     """
@@ -115,6 +95,8 @@ def estraiDatiCUD_b64(b64, estensione):
     files = {"file": (f.name, f, mimetype_file[estensione]),"push_result_on_platform": (None, "never")}
     response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
     
@@ -128,8 +110,8 @@ def estraiDatiCUD_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 
 ###   F24  ###########################################
@@ -149,6 +131,8 @@ def estraiDatiF24_file(file):
         files = {"file": (file, f, mimetypes.guess_type(file)[0]),"push_result_on_platform": (None, "never")}
         response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
 
@@ -162,8 +146,8 @@ def estraiDatiF24_file(file):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 def estraiDatiF24_b64(b64, estensione):
     """
@@ -184,6 +168,8 @@ def estraiDatiF24_b64(b64, estensione):
     files = {"file": (f.name, f, mimetype_file[estensione]),"push_result_on_platform": (None, "never")}
     response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
     
@@ -197,8 +183,8 @@ def estraiDatiF24_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 ###   CERTIFICATO STIPENDIO  ###########################################
 
@@ -217,6 +203,8 @@ def estraiDatiCertificatoStipendio_file(file):
         files = {"file": (file, f, mimetypes.guess_type(file)[0]),"push_result_on_platform": (None, "never")}
         response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
 
@@ -230,8 +218,8 @@ def estraiDatiCertificatoStipendio_file(file):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 def estraiDatiCertificatoStipendio_b64(b64, estensione):
     """
@@ -252,6 +240,8 @@ def estraiDatiCertificatoStipendio_b64(b64, estensione):
     files = {"file": (f.name, f, mimetype_file[estensione]),"push_result_on_platform": (None, "never")}
     response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
     
@@ -265,8 +255,8 @@ def estraiDatiCertificatoStipendio_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 
 ###   MERITO CREDITIZIO  ###########################################
@@ -286,6 +276,8 @@ def estraiDatiMeritoCreditizio_file(file):
         files = {"file": (file, f, mimetypes.guess_type(file)[0]),"push_result_on_platform": (None, "never")}
         response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
 
@@ -299,8 +291,8 @@ def estraiDatiMeritoCreditizio_file(file):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 def estraiDatiMeritoCreditizio_b64(b64, estensione):
     """
@@ -321,6 +313,8 @@ def estraiDatiMeritoCreditizio_b64(b64, estensione):
     files = {"file": (f.name, f, mimetype_file[estensione]),"push_result_on_platform": (None, "never")}
     response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
     
@@ -334,8 +328,8 @@ def estraiDatiMeritoCreditizio_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 
 ###   CEDOLINO PENSIONE  ###########################################
@@ -355,6 +349,8 @@ def estraiDatiCedolinoPensione_file(file):
         files = {"file": (file, f, mimetypes.guess_type(file)[0]),"push_result_on_platform": (None, "never")}
         response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
 
@@ -368,8 +364,8 @@ def estraiDatiCedolinoPensione_file(file):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 def estraiDatiCedolinoPensione_b64(b64, estensione):
     """
@@ -390,6 +386,8 @@ def estraiDatiCedolinoPensione_b64(b64, estensione):
     files = {"file": (f.name, f, mimetype_file[estensione]),"push_result_on_platform": (None, "never")}
     response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
     
@@ -403,8 +401,8 @@ def estraiDatiCedolinoPensione_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 ###   PRIVACY ESTESA  ###########################################
 
@@ -423,6 +421,8 @@ def estraiDatiPrivacyEstesa_file(file):
         files = {"file": (file, f, mimetypes.guess_type(file)[0]),"push_result_on_platform": (None, "never")}
         response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
 
@@ -436,8 +436,8 @@ def estraiDatiPrivacyEstesa_file(file):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 def estraiDatiPrivacyEstesa_b64(b64, estensione):
     """
@@ -458,6 +458,8 @@ def estraiDatiPrivacyEstesa_b64(b64, estensione):
     files = {"file": (f.name, f, mimetype_file[estensione]),"push_result_on_platform": (None, "never")}
     response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
     
@@ -471,8 +473,8 @@ def estraiDatiPrivacyEstesa_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 ###   B U S T A   P A G A   ###########################################
 
@@ -491,6 +493,8 @@ def estraiDatiBustaPaga_file(file):
         files = {"file": (file, f, mimetypes.guess_type(file)[0]),"push_result_on_platform": (None, "never")}
         response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
 
@@ -504,8 +508,9 @@ def estraiDatiBustaPaga_file(file):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+
+        return output, ret
+    else: return False, ret
 
 def estraiDatiBustaPaga_b64(b64, estensione):
     """
@@ -526,6 +531,8 @@ def estraiDatiBustaPaga_b64(b64, estensione):
     files = {"file": (f.name, f, mimetype_file[estensione]),"push_result_on_platform": (None, "never")}
     response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
     
@@ -539,8 +546,9 @@ def estraiDatiBustaPaga_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+
+        return output, ret
+    else: return False, ret
 
 
 ###   D O C U M E N T I   D ' I D E N T I T A '   #####################
@@ -560,6 +568,8 @@ def estraiDatiDocumento_file(file):
         files = {"file": (file, f, mimetypes.guess_type(file)[0]),"push_result_on_platform": (None, "never")}
         response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
         
@@ -573,8 +583,8 @@ def estraiDatiDocumento_file(file):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 def estraiDatiDocumento_b64(b64, estensione):
     """
@@ -595,6 +605,8 @@ def estraiDatiDocumento_b64(b64, estensione):
     files = {"file": (f.name, f, mimetype_file[estensione]),"push_result_on_platform": (None, "never")}
     response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = []
 
@@ -608,8 +620,8 @@ def estraiDatiDocumento_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 
 ###   O B I S   M   ###################################################
@@ -676,6 +688,8 @@ def estraiDatiObisM_file(file):
         files = {"file": (file, f, mimetypes.guess_type(file)[0]),"push_result_on_platform": (None, "never")}
         response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = [] # output complessivo
 
@@ -690,8 +704,8 @@ def estraiDatiObisM_file(file):
 
         output = [o for o in output if "Obis Mensilità" in [x["tipo"] for x in o]] # tengo solo le pagine con campo Obis Mensilità, che corrispondo quindi al dettaglio di una pensione
 
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 def estraiDatiObisM_b64(b64, estensione):
     """
@@ -717,6 +731,8 @@ def estraiDatiObisM_b64(b64, estensione):
     files = {"file": (f.name, f, mimetype_file[estensione]),"push_result_on_platform": (None, "never")}
     response = requests.post(url, headers=headers, params=params, files=files)
 
+    ret = [response.status_code, response.content]
+
     if response.status_code == 200: 
         response = response.json(); output = [] # output complessivo
         
@@ -733,8 +749,8 @@ def estraiDatiObisM_b64(b64, estensione):
 
         output = [o for o in output if "Obis Mensilità" in [x["tipo"] for x in o]] # tengo solo le pagine con campo Obis Mensilità, che corrispondo quindi al dettaglio di una pensione
 
-        return output
-    else: return False
+        return output, ret
+    else: return False, ret
 
 
 ###   F U N Z I O N I   L E G A C Y   #################################

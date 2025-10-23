@@ -18,6 +18,7 @@ from pathlib import Path
 import sugarcrm as crm
 from typing import Optional
 import unicodedata
+import json
 import cx_Oracle
 
 ###   L O G G E R   ###################################################
@@ -151,10 +152,17 @@ def cerca_valore_in_db_ora(dsn, username, password, nome_tabella, campo_ricerca,
         logger.info(f"Errore durante la connessione al database: {e}")
         return None
     
-def stampa_risultati_estrazione(output, titolo="DEBUG – VALORI ESTRATTI"):
+def stampa_risultati_estrazione(ret, output, titolo="DEBUG – VALORI ESTRATTI"):
     print("\n# ----------------------------------------------------")
     print(f"# {titolo}")
     print("# ----------------------------------------------------")
+
+    error_code = ret[0]
+    error_detail = json.loads(ret[1].decode('utf-8'))
+
+    # Stampa i risultati se errore
+    if(error_code != 200):
+        print(f"Errore myBiros {error_code}: {error_detail['detail']}")
 
     if not output:
         print("⚠️ Nessun risultato da mostrare.")
@@ -226,20 +234,20 @@ def aggiornaContatto(id, campi):
 
 def analizzaDocumento(tipo, b64, estensione):
     # routing
-    if      tipo in ("CAI", "PAT", "PAS", "TS", "PS"):        output = myBiros.estraiDatiDocumento_b64(b64, estensione)
-    elif    tipo == "BP":                                     output = myBiros.estraiDatiBustaPaga_b64(b64, estensione)
-    elif    tipo == "OBIS":                                   output = myBiros.estraiDatiObisM_b64(b64, estensione)
-    elif    tipo == "CP":                                     output = myBiros.estraiDatiCedolinoPensione_b64(b64, estensione)
-    elif    tipo == "PE":                                     output = myBiros.estraiDatiPrivacyEstesa_b64(b64, estensione)
-    elif    tipo == "MC":                                     output = myBiros.estraiDatiMeritoCreditizio_b64(b64, estensione)
-    elif    tipo == "CS":                                     output = myBiros.estraiDatiCertificatoStipendio_b64(b64, estensione)
-    elif    tipo == "CUD":                                    output = myBiros.estraiDatiCUD_b64(b64, estensione)
-    elif    tipo == "F24":                                    output = myBiros.estraiDatiF24_b64(b64, estensione)
+    if      tipo in ("CAI", "PAT", "PAS", "TS", "PS"):        output, ret = myBiros.estraiDatiDocumento_b64(b64, estensione)
+    elif    tipo == "BP":                                     output, ret = myBiros.estraiDatiBustaPaga_b64(b64, estensione)
+    elif    tipo == "OBIS":                                   output, ret = myBiros.estraiDatiObisM_b64(b64, estensione)
+    elif    tipo == "CP":                                     output, ret = myBiros.estraiDatiCedolinoPensione_b64(b64, estensione)
+    elif    tipo == "PE":                                     output, ret = myBiros.estraiDatiPrivacyEstesa_b64(b64, estensione)
+    elif    tipo == "MC":                                     output, ret = myBiros.estraiDatiMeritoCreditizio_b64(b64, estensione)
+    elif    tipo == "CS":                                     output, ret = myBiros.estraiDatiCertificatoStipendio_b64(b64, estensione)
+    elif    tipo == "CUD":                                    output, ret = myBiros.estraiDatiCUD_b64(b64, estensione)
+    elif    tipo == "F24":                                    output, ret = myBiros.estraiDatiF24_b64(b64, estensione)
     else:
         return False
 
     #Stampa valori estratti
-    stampa_risultati_estrazione(output, tipo)
+    stampa_risultati_estrazione(ret, output, tipo)
     return output
 
 def to_iso_date(s: str) -> Optional[str]:
@@ -820,6 +828,10 @@ def aggiornaCRM(id, ret):
 
         campi = []
 
+        if(SOVRASCRIVI_NOME_COGNOME):
+            add_campi("ai",     campi, "first_name",      "nome",        mappa_variabili, conf_map,  isDate=False)
+            add_campi("ai",     campi, "last_name",       "cognome",     mappa_variabili, conf_map,  isDate=False)       
+
         add_campi("ai", campi, "data_assunzione_c",         "data_assunzione",              mappa_variabili, conf_map,isDate=True)
         add_campi("ai", campi, "codice_fiscale_c",          "codice_fiscale",               mappa_variabili, conf_map,isDate=False)
         add_campi("ai", campi, "datore_lavoro_c",           "datore_lavoro",                mappa_variabili, conf_map,isDate=False)
@@ -854,15 +866,6 @@ def aggiornaCRM(id, ret):
         #Trattenuta obbligatoria		
         #Recupero obbligatorio		            altri_prestiti_rata1_c
         #Prestito		
-
-        #Esempio campi a disposizione:
-        #=== Log campi myBiros estratti ===
-        #'codice_fiscale': 93.55, 
-        #'categoria_pensione': 86.02, 
-        #'cognome': 99.77, 
-        #'periodo_retribuzione': 99.69, 
-        #'nome': 99.76, 'netto': 94.14, 
-        #'cedolino_pensione_lorda': 94.63
 
         logger.info("DEBUG - CAMPI MAPPATI")
         logger.info(mappa_variabili)
@@ -999,13 +1002,13 @@ def aggiornaCRM(id, ret):
         campi = []
 
         if(SOVRASCRIVI_NOME_COGNOME):
-            add_campi("ai",     campi, "first_name",      "name",        mappa_variabili, conf_map,  isDate=False)
-            add_campi("ai",     campi, "last_name",       "surname",     mappa_variabili, conf_map,  isDate=False)               
+            add_campi("ai",     campi, "first_name",      "dipendente_nome",        mappa_variabili, conf_map,  isDate=False)
+            add_campi("ai",     campi, "last_name",       "dipendente_cognome",     mappa_variabili, conf_map,  isDate=False)               
 
         add_campi("ai",  campi, "datore_lavoro_c",      "azienda_denominazione",      mappa_variabili, conf_map,  isDate=False)
         add_campi("ai",  campi, "data_assunzione_c",    "data_inizio_rapporto",       mappa_variabili, conf_map,  isDate=True)
-        add_campi("ai",  campi, "sesso_c",              "sex",                        mappa_variabili, conf_map,  isDate=False)
-        add_campi("ai",  campi, "vat_number_c",         "vat_azienda",                mappa_variabili, conf_map,  isDate=False)
+        add_campi("ai",  campi, "sesso_c",              "dipendente_genere",          mappa_variabili, conf_map,  isDate=False)
+        add_campi("ai",  campi, "vat_number_c",         "azienda_codice_fiscale",     mappa_variabili, conf_map,  isDate=False)
         add_campi("ai",  campi, "codice_fiscale_c",     "dipendente_codice_fiscale",  mappa_variabili, conf_map,  isDate=False)
         add_campi("ai",  campi, "birthdate",            "dipendente_data_nascita",    mappa_variabili, conf_map,  isDate=True)
 
