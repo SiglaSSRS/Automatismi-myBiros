@@ -1,6 +1,6 @@
 ###   I M P O R T   ###################################################
 
-#Da togliere per deploy
+#Da togliere per deploy <-----------------------------
 import sys
 sys.path.insert(0, r"C:\Projects\Automatismi\WS\SugarCRM")  # parent
 
