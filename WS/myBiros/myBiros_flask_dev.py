@@ -784,10 +784,10 @@ def aggiornaCRM(id, ret):
 
         add_campi("ai", campi, "codice_fiscale_c",          "codice_fiscale",        mappa_variabili, conf_map,  isDate=False)
         add_campi("ai", campi, "reddito_netto_mensile_c",   "netto_obis",            mappa_variabili, conf_map,  isDate=False)
-        add_campi("ai", campi, "category_code_c",           "categoria_pensione",    mappa_variabili, conf_map,  isDate=False)
+        add_campi("ai", campi, "category_code_c",           "categoria_pens",        mappa_variabili, conf_map,  isDate=False)
 
         #Da testare -------------------------------
-        add_campi("ai", campi, "certificate_number_c",      "chiave_pensione",       mappa_variabili, conf_map,  isDate=False)
+        add_campi("ai", campi, "certificate_number_c",      "chiave_pens",           mappa_variabili, conf_map,  isDate=False)
         add_campi("ai", campi, "site_c",                    "sede_pensione",         mappa_variabili, conf_map,  isDate=False)
         #Da testare -------------------------------
 
@@ -1108,7 +1108,7 @@ def index():
 @app.route('/result', methods=['GET'])
 def result(): 
     logger.info("SESSION: %s", session) # cookies salvati
-    return render_template("result.html", title = "Analisi documenti", esito = session["esito"], messaggio = session["messaggio"])
+    return render_template("result.html", title = "Analisi documenti", esito = sessionestrai_categorie_json["esito"], messaggio = session["messaggio"])
 
 
 @app.route('/analizza', methods=['GET'])

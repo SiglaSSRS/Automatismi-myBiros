@@ -564,6 +564,116 @@ def calcola_valore_netto_OBIS(ret, campo, tipo, confidence=99.8):
 
     return risultato_json
 
+
+def _get_first_page_with_categories(ret):
+    """Ritorna la prima pagina che ha almeno una 'Categoria Pensione' (id_number_10)."""
+    if ret is None:
+        return None
+
+    # Gestisce i tre casi: response completo, lista di pagine, singola pagina
+    if isinstance(ret, dict):
+        if "document_pages" in ret and isinstance(ret["document_pages"], list):
+            pages = ret["document_pages"]
+        elif "entities" in ret:
+            pages = [ret]
+        else:
+            return None
+    elif isinstance(ret, list):
+        pages = ret
+    else:
+        return None
+
+    for p in pages:
+        if isinstance(p, dict):
+            ents = p.get("entities") or {}
+            if ents.get("id_number_10"):
+                return p
+    return None
+
+def estrai_categorie_json(ret, campo, tipo, confidence=99.8):
+    """
+    Seleziona, in ordine di priorità, una sola categoria tra VO > SO > IO,
+    prendendo i primi 2 caratteri di ogni 'id_number_10'.
+
+    Ritorna:
+      - (record_dict, indici, categoria, page) se trova almeno una delle tre
+        dove record_dict è un dict singolo:
+          {'campo': ..., 'tipo': ..., 'valore': 'VO|SO|IO', 'confidence': ..., 'id': 0}
+      - None se non esiste VO/SO/IO
+    """
+    page = _get_first_page_with_categories(ret)
+    if not page:
+        return None
+
+    cats = page.get("entities", {}).get("id_number_10", []) or []
+
+    wanted = {"VO": [], "SO": [], "IO": []}
+    for i, c in enumerate(cats):
+        txt2 = ((c.get("text") or "").strip().upper())[:2]
+        if txt2 in wanted:
+            wanted[txt2].append(i)
+
+    selected_cat = None
+    for cand in ("VO", "SO", "IO"):
+        if wanted[cand]:
+            selected_cat = cand
+            idx = wanted[cand]
+            break
+
+    if not selected_cat:
+        return None
+
+    record = {
+        "campo": campo,
+        "tipo": tipo,
+        "valore": selected_cat,   # stringa singola
+        "confidence": confidence,
+        "id": 0
+    }
+    return record, idx, selected_cat, page
+
+def estrai_chiavi_json(ret_or_page, idx_categoria, campo, tipo, confidence=99.8):
+    """
+    Estrae la 'Chiave Pensione' (code_1) corrispondente alla categoria selezionata.
+    Restituisce un SOLO record dict e 'valore' come stringa.
+    Se agli indici indicati non c'è alcuna chiave valida, ritorna None.
+
+    Preferibilmente passa la `page` ritornata da estrai_categorie_json.
+    Per robustezza, se passi `response`, individua la stessa prima pagina utile.
+    """
+    # Se è già una pagina, usala; altrimenti trova la pagina
+    page = ret_or_page
+    if not (isinstance(page, dict) and "entities" in page):
+        page = _get_first_page_with_categories(ret_or_page)
+    if not page:
+        return None
+
+    keys = page.get("entities", {}).get("code_1", []) or []
+
+    key_value = None
+    used_index = None
+    for i in idx_categoria:
+        if 0 <= i < len(keys):
+            ktxt = (keys[i].get("text") or "").strip()
+            if ktxt:
+                key_value = ktxt
+                used_index = i
+                break
+
+    if key_value is None:
+        return None
+
+    record = {
+        "campo": campo,
+        "tipo": tipo,
+        "valore": key_value,   
+        "confidence": confidence,
+        "id": 0
+    }
+
+    return record
+
+
 def estraiDatiObisM_file(file):
 
     url = f"https://platform.mybiros.com/api/v1/inference/service/5f6f8a6c-ac77-4044-9ec7-eb491ef95f15/predict"
@@ -628,9 +738,19 @@ def estraiDatiObisM_b64(b64, estensione):
                             o.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": e["text"], "confidence": e["confidence"]}) 
             output.append(o)
 
+        #Netto Obis
         output.append(calcola_valore_netto_OBIS(response, "netto_obis", "Netto OBIS"))
+        
+        # Categorie Pensione e Chiave Pensione
+        res = estrai_categorie_json(response, "categoria_pens", "Categoria Pens")
 
-        output = [o for o in output if "Obis Mensilità" in [x["tipo"] for x in o]] # tengo solo le pagine con campo Obis Mensilità, che corrispondo quindi al dettaglio di una pensione
+        if res is not None:
+            categoria_rec, idx, cat, page = res    
+            output.append(categoria_rec)       
+            
+            chiave_rec = estrai_chiavi_json(page, idx, "chiave_pens", "Chiave Pensione")
+            if chiave_rec is not None:
+                output.append(chiave_rec) 
 
         return output, ret
     else: return False, ret
