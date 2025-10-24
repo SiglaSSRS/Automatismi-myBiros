@@ -99,7 +99,6 @@ Path(attachDir).mkdir(parents = True, exist_ok = True) # se non esiste, viene cr
 #CS:   CERTIFICATO PENSIONE
 #CUD:  CUD
 #F24:  F24
-
 #---------------------------------------------------------------------------------
 
 TIPI_DOC = ["CAI", "PAT", "PAS", "TS", "BP", "OBIS", "CP", "PE", "MC", "CS", "CUD", "PS", "F24"] # mappatura documenti su CRM (provvisoria)
@@ -1139,7 +1138,7 @@ def analizza():
         else: 
             logger.warning("DOCUMENTI SCARICATI MA NESSUN DATO ESTRATTO")
             session["esito"] = "Errore nell'estrazione o nessun dato estratto"
-            session["messaggio"] = "Verificare i documenti presenti nel CRM e riprovare."
+            session["messaggio"] = "Verificare i documenti presenti nel CRM e riprovare." 
     
     else:
         logger.warning("NESSUN DOCUMENTO SCARICATO")
