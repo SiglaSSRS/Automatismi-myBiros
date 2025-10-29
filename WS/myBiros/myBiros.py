@@ -19,6 +19,7 @@ import base64
 import io
 import mimetypes
 import requests
+import service_pretty
 
 
 ###   C O S T A N T I   ###############################################
@@ -87,6 +88,9 @@ def estraiDatiCUD_b64(b64, estensione):
     if response.status_code == 200: 
         response = response.json(); output = []
     
+        #Pretty
+        service_pretty.pretty_service_response(response, prefer="best", show_empty=True)
+
         for field in response["service_fields"]:
             for entity in response["document_summary"]["entities"]:
                 if field == entity and response["document_summary"]["entities"][entity]:
@@ -97,6 +101,10 @@ def estraiDatiCUD_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
+
+        #Pretty
+        service_pretty.pretty_output(output)
+
         return output, ret
     else: return False, ret
 
@@ -176,6 +184,9 @@ def estraiDatiCertificatoStipendio_file(file):
     if response.status_code == 200: 
         response = response.json(); output = []
 
+        #Pretty
+        service_pretty.pretty_service_response(response, prefer="best", show_empty=True)
+
         for field in response["service_fields"]:
             for entity in response["document_summary"]["entities"]:
                 if field == entity and response["document_summary"]["entities"][entity]:
@@ -186,6 +197,10 @@ def estraiDatiCertificatoStipendio_file(file):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
+
+        #Pretty
+        service_pretty.pretty_output(output)
+
         return output, ret
     else: return False, ret
 
@@ -203,8 +218,14 @@ def estraiDatiCertificatoStipendio_b64(b64, estensione):
 
     ret = [response.status_code, response.content]
 
+    #Da qui posso recuperare il nome del servizio di myBiros, esempio Ceritificato Stipendio
+    #service_name = response.get("service_name", "")
+
     if response.status_code == 200: 
         response = response.json(); output = []
+
+        #Pretty
+        service_pretty.pretty_service_response(response, prefer="best", show_empty=True)
     
         for field in response["service_fields"]:
             for entity in response["document_summary"]["entities"]:
@@ -216,6 +237,10 @@ def estraiDatiCertificatoStipendio_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
+
+        #Pretty
+        service_pretty.pretty_output(output)
+
         return output, ret
     else: return False, ret
 
@@ -444,6 +469,9 @@ def estraiDatiBustaPaga_b64(b64, estensione):
 
     if response.status_code == 200: 
         response = response.json(); output = []
+
+        #Pretty
+        service_pretty.pretty_service_response(response, prefer="best", show_empty=True)
     
         for field in response["service_fields"]:
             for entity in response["document_summary"]["entities"]:
@@ -455,6 +483,9 @@ def estraiDatiBustaPaga_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
+
+        #Pretty
+        service_pretty.pretty_output(output)
 
         return output, ret
     else: return False, ret
@@ -748,7 +779,7 @@ def estraiDatiObisM_b64(b64, estensione):
             categoria_rec, idx, cat, page = res    
             output.append(categoria_rec)       
             
-            chiave_rec = estrai_chiavi_json(page, idx, "chiave_pens", "Chiave Pensione")
+            chiave_rec = estrai_chiavi_json(page, idx, "chiave_pens", "Chiave Pens")
             if chiave_rec is not None:
                 output.append(chiave_rec) 
 

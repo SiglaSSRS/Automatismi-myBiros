@@ -22,6 +22,7 @@ import sugarcrm as crm
 from typing import Optional
 import unicodedata
 import json
+import re
 import cx_Oracle
 
 ###   L O G G E R   ###################################################
@@ -155,7 +156,75 @@ def cerca_valore_in_db_ora(dsn, username, password, nome_tabella, campo_ricerca,
     except cx_Oracle.DatabaseError as e:
         logger.info(f"Errore durante la connessione al database: {e}")
         return None
-    
+
+def cerca_valore_in_db_ora_query(dsn, username, password,
+                                 query_in,
+                                 campo_ricerca,
+                                 campo_chiave,
+                                 valore_chiave,
+                                 usa_like):
+    """
+    Esegue una query Oracle generica (passata in 'query_in') applicando un filtro su 'campo_chiave'.
+    Mantiene lo stesso comportamento di 'cerca_valore_in_db_ora':
+      - Se nessun risultato -> None
+      - Se usa_like=True e >1 risultati -> None
+      - Altrimenti ritorna il primo valore della prima riga (solo 'campo_ricerca').
+
+    Args:
+        dsn (str): Data Source Name Oracle.
+        username (str): Utente Oracle.
+        password (str): Password Oracle.
+        query_in (str): Query SQL di partenza (es. SELECT ... FROM ... [JOIN ...]).
+        campo_ricerca (str): Nome o alias della colonna da estrarre nel risultato finale.
+        campo_chiave (str): Colonna su cui applicare il filtro (es. a.iva).
+        valore_chiave (str): Valore da cercare nel campo chiave.
+        usa_like (bool): Se True applica LIKE '%valore%', altrimenti '='.
+
+    Returns:
+        Valore singolo del campo richiesto o None.
+    """
+    try:
+        base_query = (query_in or "").strip().rstrip(";")
+        if not base_query.lower().startswith("select"):
+            raise ValueError("Il parametro 'query_in' deve essere una SELECT SQL valida.")
+
+        # Costruzione della clausola di filtro
+        if usa_like:
+            cond = f"TRIM({campo_chiave}) LIKE :valore"
+            bind_val = f"%{str(valore_chiave).strip()}%"
+        else:
+            cond = f"TRIM({campo_chiave}) = :valore"
+            bind_val = str(valore_chiave).strip()
+
+        # Inserisce WHERE o AND a seconda della query
+        if re.search(r"\bwhere\b", base_query, flags=re.IGNORECASE):
+            inner_query = f"{base_query} AND {cond}"
+        else:
+            inner_query = f"{base_query} WHERE {cond}"
+
+        # Wrappa e seleziona solo il campo richiesto
+        final_sql = f"SELECT {campo_ricerca} FROM ({inner_query}) t"
+
+        with cx_Oracle.connect(user=username, password=password, dsn=dsn) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(final_sql, {"valore": bind_val})
+                results = cursor.fetchall()
+
+        # Nessun risultato
+        if not results:
+            return None
+
+        # Caso LIKE: più di un record → None
+        if usa_like and len(results) > 1:
+            return None
+
+        return results[0][0]
+
+    except (cx_Oracle.Error, ValueError) as e:
+        ts = dt.now(tz.utc).strftime('%Y%m%d_%H%M%S')
+        print(f"[{ts}] Errore durante l'esecuzione della query: {e}")
+        return None
+
 def stampa_risultati_estrazione(ret, output, titolo="DEBUG – VALORI ESTRATTI"):
     print("\n# ----------------------------------------------------")
     print(f"# {titolo}")
@@ -219,7 +288,7 @@ def scaricaAllegatiContatto(id):
             file = s.get_note_attachment(note)["note_attachment"] # allegato
             ext = os.path.splitext(file["filename"])[1][1:].lower() # estensione del file, senza punto e in minuscolo
             #with open(os.path.join(attachDir, file["filename"]), "wb") as f: f.write(base64.b64decode(file["file"])) # salva copia in locale
-            files.append({"nome": note.name, "estensione": ext, "tipo": note.description, "b64": file["file"]})
+            files.append({"nome": note.name, "estensione": ext, "tipo": note.description, "document_type": note.document_type, "b64": file["file"]})
 
         files = [f for f in files if f["tipo"] in TIPI_DOC] # tengo solo i documenti d'interesse
         return files
@@ -236,7 +305,33 @@ def aggiornaContatto(id, campi):
         return True
     except: return False
 
-def analizzaDocumento(tipo, b64, estensione):
+def analizzaDocumento(tipo, document_type, b64, estensione):
+
+    #Combobox nuova di Mayer 
+    #
+    #document_type -> elemento recuperato dalla combo box nuova di Mayer
+    #
+    #<option label="" value=""></option>
+    #<option label="Carta d'identità"                           value="CAI">  Carta d'identità</option>
+    #<option label="Carta d'identità non valida per l’espatrio" value="CDN">  Carta d'identità non valida per l’espatrio</option>
+    #<option label="Carta d'identità elettronica"               value="C20">  Carta d'identità elettronica</option>
+    #<option label="Patente di guida"                           value="PAT">  Patente di guida</option>
+    #<option label="Passaporto"                                 value="PAS">  Passaporto</option>
+    #<option label="Patente prefettura"                         value="P1">   Patente prefettura</option>
+    #<option label="Patente motorizzazione"                     value="P2">   Patente motorizzazione</option>
+    #<option label="Tessera ministrale"                         value="TEM">  Tessera ministrale</option>
+    #<option label="Tessera di riconoscimento"                  value="TER">  Tessera di riconoscimento</option>
+
+    #Quando la Combo sara terminita
+    #if      tipo in ("CAI",
+    #                 "CDN",
+    #                 "C20",
+    #                 "PAT",
+    #                 "P1",
+    #                 "P2",
+    #                 "PAS"):                                 output, ret = myBiros.estraiDatiDocumento_b64(b64, estensione)
+
+
     # routing
     if      tipo in ("CAI", "PAT", "PAS", "TS", "PS"):        output, ret = myBiros.estraiDatiDocumento_b64(b64, estensione)
     elif    tipo == "BP":                                     output, ret = myBiros.estraiDatiBustaPaga_b64(b64, estensione)
@@ -324,7 +419,7 @@ def add_campi(mode, campi, nome_crm, key_ocr, mappa_variabili, conf_map, isDate=
         #print(err)
         raise ValueError(err)
 
-def aggiornaCRM(id, ret):
+def aggiornaCRM(id, ret, tipo):
 
     """
     # Se ret è una lista di una lista, lo "appiattisco", i documenti di riconoscimento rispetto alle altre tipologie bisogna recupeare
@@ -379,43 +474,18 @@ def aggiornaCRM(id, ret):
             conf_map[key] = 0.0
             
     #Stampa ret
-    print(ret)        
+    #print(ret)        
 
     #Carta identita, Patente, Codice Fiscale, Passaporto
     #--------------------------------------------------------------------------------------------
     category_field = next((c for c in ret if c["tipo"].lower().replace(" ", "_") == "category"), None)
-
-    #OBIS
-    #--------------------------------------------------------------------------------------------
-    obis_netto_pensione = next((c for c in ret if c["tipo"].lower().replace(" ", "_") == "obis_netto_pensione"), None)
-
-    #BP BUSTA PAGA
-    #--------------------------------------------------------------------------------------------
-    datore_lavoro = next((c for c in ret if c["tipo"].lower().replace(" ", "_") == "datore_lavoro"), None)
-
-    #CEDOLINO PENSIONE
-    #--------------------------------------------------------------------------------------------
-    categoria_pensione = next((c for c in ret if c["tipo"].lower().replace(" ", "_") == "categoria_pensione"), None)
-
-    #MERITO CREDITIZIO
-    tipo_merito = any("Ulteriore Spesa Mensile".lower() in item.get("tipo", "").lower() for item in ret)
-
-    #CERTIFIATO STIPENDIO
-    #Se presente questa tipologia di campo stiamo parlando sicuramente di un certificato di stipendio,
-    #nella busta paga che contiene dati simili non e' presente questo campo spcifico.
-    data_certificato = next((c for c in ret if c["tipo"].lower().replace(" ", "_") == "data_certificato"), None)
-
-    #CUD
-    #Anche qua se presente questa etichetta stiamo parlando di un documento CUD
-    tipo_cud = any("TFR (".lower() in item.get("tipo", "").lower() for item in ret)
 
     #Per vedere i campi reali recuperari da myBiros per implementare vari tipi di documenti
     #--------------------------------------------------------------------------------------------
     logger.info(f"Valore di ret      in aggiornaCRM: {ret}")
     logger.info(f"Valore di conf_map in aggiornaCRM: {conf_map}")
 
-    #print(ret)
-
+    #Tutti i documenti di riconoscimento
     if category_field:
         category_val = str(category_field["valore"]).strip().lower()
 
@@ -560,7 +630,7 @@ def aggiornaCRM(id, ret):
             nascita_comune_c = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", birth_place, False)
             if(nascita_comune_c):
                 parts = nascita_comune_c.split("_")
-                add_campi("man", campi, "COMUNE",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
+                add_campi("man", campi, "nascita_comune_c",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
                 add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),   mappa_variabili, conf_map,  isDate=False)
                 add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),    mappa_variabili, conf_map,  isDate=False)
                 add_campi("man", campi, "nascita_nazione_c",     parts[0],               mappa_variabili, conf_map,  isDate=False)            
@@ -749,7 +819,7 @@ def aggiornaCRM(id, ret):
             nascita_comune_c = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", birth_place, False)
             if(nascita_comune_c):
                 parts = nascita_comune_c.split("_")
-                add_campi("man", campi, "COMUNE",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
+                add_campi("man", campi, "nascita_comune_c",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
                 add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),   mappa_variabili, conf_map,  isDate=False)
                 add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),    mappa_variabili, conf_map,  isDate=False)
                 add_campi("man", campi, "nascita_nazione_c",     parts[0],               mappa_variabili, conf_map,  isDate=False)
@@ -761,7 +831,7 @@ def aggiornaCRM(id, ret):
             logger.info(f"Aggiornamento:{category_val} {campi}")                
 
     #OBIS -------------------------------------------------------
-    if obis_netto_pensione:
+    if tipo == "OBIS":
 
         #--------------------------------------------------------------------------------------------
         #Tabella decodifica OBIS, data dall'ufficio commerciale
@@ -782,14 +852,16 @@ def aggiornaCRM(id, ret):
 
         campi = []
 
+        add_campi("man",campi, "professione_c",             "P",                     mappa_variabili, conf_map,  isDate=False)
         add_campi("ai", campi, "codice_fiscale_c",          "codice_fiscale",        mappa_variabili, conf_map,  isDate=False)
         add_campi("ai", campi, "reddito_netto_mensile_c",   "netto_obis",            mappa_variabili, conf_map,  isDate=False)
-        add_campi("ai", campi, "category_code_c",           "categoria_pens",        mappa_variabili, conf_map,  isDate=False)
 
-        #Da testare -------------------------------
-        add_campi("ai", campi, "certificate_number_c",      "chiave_pens",           mappa_variabili, conf_map,  isDate=False)
+        #categoria_pens Esempio VO corrisponde al un codice di tre cifre esempi 001
+        #sede_pensione  Esempio SULMONA corrisponde al un codice di quattro cifre esempio 1111
+        add_campi("ai", campi, "category_code_c",           "categoria_pens",        mappa_variabili, conf_map,  isDate=False)
         add_campi("ai", campi, "site_c",                    "sede_pensione",         mappa_variabili, conf_map,  isDate=False)
-        #Da testare -------------------------------
+
+        add_campi("ai", campi, "certificate_number_c",      "chiave_pens",           mappa_variabili, conf_map,  isDate=False)
 
         if aggiornaContatto(id, campi): logger.info("CRM AGGIORNATO")
         else: logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")  
@@ -797,7 +869,7 @@ def aggiornaCRM(id, ret):
         logger.info(f"Aggiornamento: OBIS {campi}")    
 
     #BP BUSTA PAGA
-    if datore_lavoro:
+    if tipo == "BP":
 
         #--------------------------------------------------------------------------------------------
         #Tabella decodifica BUSTA PAGA, data dall'ufficio commerciale
@@ -836,17 +908,61 @@ def aggiornaCRM(id, ret):
             add_campi("ai",     campi, "first_name",      "nome",        mappa_variabili, conf_map,  isDate=False)
             add_campi("ai",     campi, "last_name",       "cognome",     mappa_variabili, conf_map,  isDate=False)       
 
-        add_campi("ai", campi, "data_assunzione_c",         "data_assunzione",              mappa_variabili, conf_map,isDate=True)
-        add_campi("ai", campi, "codice_fiscale_c",          "codice_fiscale",               mappa_variabili, conf_map,isDate=False)
-        add_campi("ai", campi, "datore_lavoro_c",           "datore_lavoro",                mappa_variabili, conf_map,isDate=False)
-        add_campi("ai", campi, "reddito_netto_mensile_c",   "netto",                        mappa_variabili, conf_map,isDate=False)
-        add_campi("ai", campi, "vat_number_c",              "codice_fiscale_azienda",       mappa_variabili, conf_map,isDate=False)
+        add_campi("man",campi, "professione_c",                "Q",                            mappa_variabili, conf_map,isDate=False)
+        add_campi("ai", campi, "data_assunzione_c",            "data_assunzione",              mappa_variabili, conf_map,isDate=True)
+        add_campi("ai", campi, "codice_fiscale_c",             "codice_fiscale",               mappa_variabili, conf_map,isDate=False)
+        add_campi("ai", campi, "datore_lavoro_c",              "datore_lavoro",                mappa_variabili, conf_map,isDate=False)
+        add_campi("ai", campi, "reddito_netto_mensile_c",      "netto",                        mappa_variabili, conf_map,isDate=False)
+        add_campi("ai", campi, "vat_number_c",                 "codice_fiscale_azienda",       mappa_variabili, conf_map,isDate=False)
+        add_campi("ai", campi, "busta_paga_paga_oraria",       "paga_oraria",                  mappa_variabili, conf_map,isDate=False)
+        add_campi("ai", campi, "busta_paga_mese_retribuzione", "mese_retribuzione",            mappa_variabili, conf_map,isDate=False)
+        add_campi("ai", campi, "busta_paga_anno_retribuzione", "anno_retribuzione",            mappa_variabili, conf_map,isDate=False)
+        add_campi("ai", campi, "busta_paga_totale_trattenute", "totale_trattenute",            mappa_variabili, conf_map,isDate=False)
 
+        add_campi("ai", campi, "busta_paga_part_time",             "part_time_percentuale",    mappa_variabili, conf_map,isDate=False)
+        add_campi("ai", campi, "dipendente_reddito_lordo_mensile", "totale_competenze",        mappa_variabili, conf_map,isDate=False)
+        
         #Da testare --------------------
         add_campi("ai", campi, "cqs_rata_c",                "cessione",                     mappa_variabili, conf_map,isDate=False)
         add_campi("ai", campi, "altri_prestiti_rata1_c",    "prestito",                     mappa_variabili, conf_map,isDate=False)
         add_campi("ai", campi, "delega_rata_c",             "delegazione_prestito",         mappa_variabili, conf_map,isDate=False)
         #Da testare --------------------
+
+        #Calcolo categoria dipendente in base alla tabella ANATERZ e ANAAMM00F
+        query = """
+        SELECT
+            a.TERZO,
+            a.IVA,
+            n.AMM_CDCATEG
+        FROM SIGLAREPORT.ANATERZ a
+        INNER JOIN ANAAMM00F n ON a.terzo = n.AMM_TERZO
+        """
+
+        #Solitamente myBiros in questo campo ritorna la partita iva e provo a cercarla in 3b
+        codice_fiscale_azienda = mappa_variabili["codice_fiscale_azienda"]
+
+        clean = "".join(c for c in codice_fiscale_azienda if c.isdigit())
+        if clean:
+            numero_piva = int(clean)
+        else:
+            numero_piva = None 
+
+        categoria = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "AMM_CDCATEG", "IVA", numero_piva, False)
+
+        cat_atc = None
+        if(categoria):
+            if      categoria == "STA":    cat_atc = "Q_STA"
+            elif    categoria == "NTF":    cat_atc = "Q_NTF"
+            elif    categoria == "PAP":    cat_atc = "Q_PAP"
+            elif    categoria == "PRG":    cat_atc = "Q_PRG"
+            elif    categoria == "PRI":    cat_atc = "Q_PRI"
+            elif    categoria == "PRP":    cat_atc = "Q_PRP"
+            elif    categoria == "PUB":    cat_atc = "Q_PUB"
+            else:
+                cat_atc = None
+
+            if(cat_atc):
+                add_campi("man", campi, "categoria_atc_c", cat_atc, mappa_variabili, conf_map,isDate=False)
 
         if aggiornaContatto(id, campi): logger.info("CRM AGGIORNATO")
         else: logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")   
@@ -854,7 +970,7 @@ def aggiornaCRM(id, ret):
         logger.info(f"Aggiornamento: BP BUSTA PAGA {campi}")    
 
     #CEDOLINO PENSIONE
-    if categoria_pensione:
+    if tipo == "CP":
 
         #--------------------------------------------------------------------------------------------
         #Tabella decodifica CEDOLINO PENSIONE, data dall'ufficio commerciale
@@ -876,9 +992,10 @@ def aggiornaCRM(id, ret):
 
         campi = []
 
-        add_campi("ai", campi, "codice_fiscale_c",          "codice_fiscale",               mappa_variabili, conf_map,isDate=False)
-        add_campi("ai", campi, "reddito_netto_mensile_c",   "netto",                        mappa_variabili, conf_map,isDate=False)
-        add_campi("ai", campi, "category_code_c",           "categoria_pensione",           mappa_variabili, conf_map,isDate=False)        
+        add_campi("man", campi, "professione_c",             "P",                            mappa_variabili, conf_map,isDate=False)
+        add_campi("ai",  campi, "codice_fiscale_c",          "codice_fiscale",               mappa_variabili, conf_map,isDate=False)
+        add_campi("ai",  campi, "reddito_netto_mensile_c",   "netto",                        mappa_variabili, conf_map,isDate=False)
+        add_campi("ai",  campi, "category_code_c",           "categoria_pensione",           mappa_variabili, conf_map,isDate=False)        
 
         #Da verificare non e' facile trovare un caso con la voce prestito.....
         add_campi("ai", campi, "altri_prestiti_rata1_c",    "prestito",                     mappa_variabili, conf_map,isDate=False)     
@@ -888,9 +1005,8 @@ def aggiornaCRM(id, ret):
 
         logger.info(f"Aggiornamento: CEDOLINO PENSIONE {campi}")    
 
-
     #MERITO CREDITIZIO
-    if tipo_merito:
+    if tipo == "MC": 
 
         #--------------------------------------------------------------------------------------------
         #Tabella decodifica MERITO CREDITIZIO, data dall'ufficio commerciale
@@ -951,10 +1067,10 @@ def aggiornaCRM(id, ret):
         dipendente_privato  = to_bool(mappa_variabili["dipendente_privato"])
 
         if(pensionato): 
-            add_campi("man", campi, "professione_c",    "Q",     mappa_variabili, conf_map,  isDate=False)
+            add_campi("man", campi, "professione_c",    "P",     mappa_variabili, conf_map,  isDate=False)
 
         if(dipendente_privato): 
-            add_campi("man", campi, "professione_c",    "P",     mappa_variabili, conf_map,  isDate=False)
+            add_campi("man", campi, "professione_c",    "Q",     mappa_variabili, conf_map,  isDate=False)
  
 
         if aggiornaContatto(id, campi): logger.info("CRM AGGIORNATO")
@@ -963,7 +1079,7 @@ def aggiornaCRM(id, ret):
         logger.info(f"Aggiornamento: MERITO CREDITIZIO {campi}")    
 
     #CUD
-    if tipo_cud:
+    if tipo == "CUD":
 
         #--------------------------------------------------------------------------------------------
         #Tabella decodifica CUD, data dall'ufficio commerciale
@@ -1016,6 +1132,32 @@ def aggiornaCRM(id, ret):
         add_campi("ai",  campi, "codice_fiscale_c",     "dipendente_codice_fiscale",  mappa_variabili, conf_map,  isDate=False)
         add_campi("ai",  campi, "birthdate",            "dipendente_data_nascita",    mappa_variabili, conf_map,  isDate=True)
 
+        add_campi("ai",  campi, "cud_anno_competenza",          "anno_competenza",    mappa_variabili, conf_map,  isDate=False)   
+        add_campi("ai",  campi, "cud_reddito_t_indeterminato",  "reddito_t._determ.", mappa_variabili, conf_map,  isDate=False)   
+        add_campi("ai",  campi, "cud_reddito_pensione",         "reddito_pensione",   mappa_variabili, conf_map,  isDate=False)   
+        
+        #TFR
+        #------------------------------------------------------------------------------------------------------------------------
+        #TFR Maturato Dall'1-1-2001 e Rimasto in Azienda:
+        add_campi("ai",  campi, "cud_tfr_maturato_dal_112001_az",    "tfr_(810)",               mappa_variabili, conf_map,  isDate=False)   
+
+        #TFR Maturato Dall'1-1-2001 al 31-12-2006 e Versato al Fondo:
+        add_campi("ai",  campi, "cud_tfr_maturato_dal_112001_fondo", "tfr_(812)",               mappa_variabili, conf_map,  isDate=False)   
+
+        #TFR Maturato Dall'1-1-2007 e Versato al Fondo:
+        add_campi("ai",  campi, "cud_tfr_maturato_dall112007_fondo", "tfr_(813)",               mappa_variabili, conf_map,  isDate=False) 
+        
+        #TFR Maturato Fino al 31-12-2000 e Versato al Fondo:
+        add_campi("ai",  campi, "cud_tfr_maturato_al_3112200_fondo", "tfr_(811)",               mappa_variabili, conf_map,  isDate=False) 
+
+        #TFR Maturato Fino al 31-12-2000 e Rimasto in Azienda:
+        add_campi("ai",  campi, "cud_tfr_maturato_al_3112200_az",    "tfr_(809)",               mappa_variabili, conf_map,  isDate=False) 
+
+        #Indennità, Acconti, Anticipazioni e Somme Erogate Nell'anno:
+        #Non ancora presente ma sara il campo 801 del rigo tfr 801
+        #add_campi("ai",  campi, "cud_indennita_acconti_anticipazi",  "tfr_(801)", mappa_variabili, conf_map,  isDate=False) 
+        
+        #Def comumne di nascita
         comune_nascita_dipendente = mappa_variabili["comune_nascita_dipendente"]
 
         #Decodifica comune di nascita
@@ -1037,13 +1179,49 @@ def aggiornaCRM(id, ret):
             add_campi("man", campi, "nascita_nazione_c",     parts[0],                        mappa_variabili, conf_map,  isDate=False)        
 
 
+        #Calcolo categoria dipendente in base alla tabella ANATERZ e ANAAMM00F
+        query = """
+        SELECT
+            a.TERZO,
+            a.IVA,
+            n.AMM_CDCATEG
+        FROM SIGLAREPORT.ANATERZ a
+        INNER JOIN ANAAMM00F n ON a.terzo = n.AMM_TERZO
+        """
+
+        #Solitamente myBiros in questo campo ritorna la partita iva e provo a cercarla in 3b
+        codice_fiscale_azienda = mappa_variabili["azienda_codice_fiscale"]
+
+        clean = "".join(c for c in codice_fiscale_azienda if c.isdigit())
+        if clean:
+            numero_piva = int(clean)
+        else:
+            numero_piva = None 
+
+        categoria = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "AMM_CDCATEG", "IVA", numero_piva, False)
+
+        cat_atc = None
+        if(categoria):
+            if      categoria == "STA":    cat_atc = "Q_STA"
+            elif    categoria == "NTF":    cat_atc = "Q_NTF"
+            elif    categoria == "PAP":    cat_atc = "Q_PAP"
+            elif    categoria == "PRG":    cat_atc = "Q_PRG"
+            elif    categoria == "PRI":    cat_atc = "Q_PRI"
+            elif    categoria == "PRP":    cat_atc = "Q_PRP"
+            elif    categoria == "PUB":    cat_atc = "Q_PUB"
+            else:
+                cat_atc = None
+
+            if(cat_atc):
+                add_campi("man", campi, "categoria_atc_c", cat_atc, mappa_variabili, conf_map,isDate=False)
+
         if aggiornaContatto(id, campi): logger.info("CRM AGGIORNATO")
         else: logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")   
 
         logger.info(f"Aggiornamento: CUD {campi}")    
 
     #CERITFICATO STIPENDIO
-    if data_certificato:
+    if tipo == "CS":
 
         #--------------------------------------------------------------------------------------------
         #Tabella decodifica CERITFICATO STIPENDIO, data dall'ufficio commerciale
@@ -1085,6 +1263,47 @@ def aggiornaCRM(id, ret):
         add_campi("ai",  campi, "reddito_netto_mensile_c",  "retribuzione_netta",       mappa_variabili, conf_map,  isDate=False)
         add_campi("ai",  campi, "birthdate",                "data_nascita_dipendente",  mappa_variabili, conf_map,  isDate=True)
 
+        add_campi("ai",  campi, "cds_data_cds",             "data_certificato ",        mappa_variabili, conf_map,  isDate=True)
+        add_campi("ai",  campi, "cds_tfr_accumulato",       "tfr_accumulato",           mappa_variabili, conf_map,  isDate=False)
+        add_campi("ai",  campi, "professione_specifica_c",  "qualifica",                mappa_variabili, conf_map,  isDate=False)
+
+        
+        #Calcolo categoria dipendente in base alla tabella ANATERZ e ANAAMM00F
+        query = """
+        SELECT
+            a.TERZO,
+            a.IVA,
+            n.AMM_CDCATEG
+        FROM SIGLAREPORT.ANATERZ a
+        INNER JOIN ANAAMM00F n ON a.terzo = n.AMM_TERZO
+        """
+
+        #Solitamente myBiros in questo campo ritorna la partita iva e provo a cercarla in 3b
+        codice_fiscale_azienda = mappa_variabili["vat_azienda"]
+
+        clean = "".join(c for c in codice_fiscale_azienda if c.isdigit())
+        if clean:
+            numero_piva = int(clean)
+        else:
+            numero_piva = None 
+
+        categoria = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "AMM_CDCATEG", "IVA", numero_piva, False)
+
+        cat_atc = None
+        if(categoria):
+            if      categoria == "STA":    cat_atc = "Q_STA"
+            elif    categoria == "NTF":    cat_atc = "Q_NTF"
+            elif    categoria == "PAP":    cat_atc = "Q_PAP"
+            elif    categoria == "PRG":    cat_atc = "Q_PRG"
+            elif    categoria == "PRI":    cat_atc = "Q_PRI"
+            elif    categoria == "PRP":    cat_atc = "Q_PRP"
+            elif    categoria == "PUB":    cat_atc = "Q_PUB"
+            else:
+                cat_atc = None
+
+            if(cat_atc):
+                add_campi("man", campi, "categoria_atc_c", cat_atc, mappa_variabili, conf_map,isDate=False)
+
         if aggiornaContatto(id, campi): logger.info("CRM AGGIORNATO")
         else: logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")   
 
@@ -1108,7 +1327,7 @@ def index():
 @app.route('/result', methods=['GET'])
 def result(): 
     logger.info("SESSION: %s", session) # cookies salvati
-    return render_template("result.html", title = "Analisi documenti", esito = sessionestrai_categorie_json["esito"], messaggio = session["messaggio"])
+    return render_template("result.html", title = "Analisi documenti", esito = session["esito"], messaggio = session["messaggio"])
 
 
 @app.route('/analizza', methods=['GET'])
@@ -1117,14 +1336,15 @@ def analizza():
     id = session["id"] # recupero l'id del contatto dai cookies
 
     documenti = scaricaAllegatiContatto(id)
+
     if documenti:
         output = []
         logger.info("DOCUMENTI SCARICATI: %s", len(documenti))
         for doc in documenti: 
-            logger.info("%s: %s, %s", doc["nome"], doc["tipo"], doc["estensione"])
+            logger.info("%s: %s, %s, %s", doc["nome"], doc["tipo"], doc["document_type"], doc["estensione"])
 
             #Una volta scarticato il documento esso viene analizzato da myBiros
-            dati = analizzaDocumento(doc["tipo"], doc["b64"], doc["estensione"])
+            dati = analizzaDocumento(doc["tipo"], doc["document_type"], doc["b64"], doc["estensione"])
 
             if dati: 
                 output.append({"tipo": doc["tipo"], "dati": dati})
@@ -1135,7 +1355,7 @@ def analizza():
             session["messaggio"] = "Ricaricare la pagina del CRM per verificare i dati estratti."
 
             #Ho i dati estratti da myBiros, ora aggiorno il CRM
-            for doc in output: aggiornaCRM(id, doc["dati"])
+            for doc in output: aggiornaCRM(id, doc["dati"], doc["tipo"])
 
         else: 
             logger.warning("DOCUMENTI SCARICATI MA NESSUN DATO ESTRATTO")
