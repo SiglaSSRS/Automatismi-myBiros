@@ -350,6 +350,9 @@ def estraiDatiCedolinoPensione_b64(b64, estensione):
 
     if response.status_code == 200: 
         response = response.json(); output = []
+
+        #Pretty
+        service_pretty.pretty_service_response(response, prefer="best", show_empty=True)
     
         for field in response["service_fields"]:
             for entity in response["document_summary"]["entities"]:
@@ -361,6 +364,10 @@ def estraiDatiCedolinoPensione_b64(b64, estensione):
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": value, "confidence": str(confidence)})
                     else: # unico valore, lo resetituisco
                         output.append({"tipo": response["service_fields"][field]["tag_alias"], "valore": response["document_summary"]["entities"][entity]["text"], "confidence": str(response["document_summary"]["entities"][entity]["confidence"])})       
+
+        #Pretty
+        service_pretty.pretty_output(output)
+
         return output, ret
     else: return False, ret
 
@@ -624,13 +631,13 @@ def _get_first_page_with_categories(ret):
 def estrai_categorie_json(ret, campo, tipo, confidence=99.8):
     """
     Seleziona, in ordine di priorità, una sola categoria tra VO > SO > IO,
-    prendendo i primi 2 caratteri di ogni 'id_number_10'.
+    ma nel valore restituisce l'intera stringa testuale originale della categoria trovata.
 
     Ritorna:
-      - (record_dict, indici, categoria, page) se trova almeno una delle tre
-        dove record_dict è un dict singolo:
-          {'campo': ..., 'tipo': ..., 'valore': 'VO|SO|IO', 'confidence': ..., 'id': 0}
-      - None se non esiste VO/SO/IO
+      - (record_dict, indici, categoria, page)
+      dove record_dict è:
+        {'campo': ..., 'tipo': ..., 'valore': <testo intero categoria>, 'confidence': ..., 'id': 0}
+      - None se non trova alcuna delle tre sigle.
     """
     page = _get_first_page_with_categories(ret)
     if not page:
@@ -640,15 +647,21 @@ def estrai_categorie_json(ret, campo, tipo, confidence=99.8):
 
     wanted = {"VO": [], "SO": [], "IO": []}
     for i, c in enumerate(cats):
-        txt2 = ((c.get("text") or "").strip().upper())[:2]
-        if txt2 in wanted:
-            wanted[txt2].append(i)
+        txt_full = (c.get("text") or "").strip().upper()
+        prefix = txt_full[:2]
+        if prefix in wanted:
+            wanted[prefix].append((i, txt_full))  # salvo anche il testo intero
 
     selected_cat = None
+    selected_txt = None
+    idx = []
+
+    # ordine di priorità: VO > SO > IO
     for cand in ("VO", "SO", "IO"):
         if wanted[cand]:
             selected_cat = cand
-            idx = wanted[cand]
+            idx = [x[0] for x in wanted[cand]]
+            selected_txt = wanted[cand][0][1]  # prendo il testo completo della prima occorrenza
             break
 
     if not selected_cat:
@@ -657,10 +670,11 @@ def estrai_categorie_json(ret, campo, tipo, confidence=99.8):
     record = {
         "campo": campo,
         "tipo": tipo,
-        "valore": selected_cat,   # stringa singola
+        "valore": selected_txt,  # ✅ testo intero della categoria
         "confidence": confidence,
         "id": 0
     }
+
     return record, idx, selected_cat, page
 
 def estrai_chiavi_json(ret_or_page, idx_categoria, campo, tipo, confidence=99.8):
@@ -759,6 +773,9 @@ def estraiDatiObisM_b64(b64, estensione):
 
     if response.status_code == 200: 
         response = response.json(); output = [] # output complessivo
+
+        #Pretty
+        service_pretty.pretty_service_response(response, prefer="best", show_empty=True)
         
         for page in response["document_pages"]:
             o = [] # output della singola pagina
@@ -782,6 +799,10 @@ def estraiDatiObisM_b64(b64, estensione):
             chiave_rec = estrai_chiavi_json(page, idx, "chiave_pens", "Chiave Pens")
             if chiave_rec is not None:
                 output.append(chiave_rec) 
+
+
+        #Pretty
+        service_pretty.pretty_output(output)
 
         return output, ret
     else: return False, ret

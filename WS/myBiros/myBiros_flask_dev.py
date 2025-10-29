@@ -157,6 +157,10 @@ def cerca_valore_in_db_ora(dsn, username, password, nome_tabella, campo_ricerca,
         logger.info(f"Errore durante la connessione al database: {e}")
         return None
 
+import re
+import cx_Oracle
+from datetime import datetime as dt, timezone
+
 def cerca_valore_in_db_ora_query(dsn, username, password,
                                  query_in,
                                  campo_ricerca,
@@ -165,65 +169,90 @@ def cerca_valore_in_db_ora_query(dsn, username, password,
                                  usa_like):
     """
     Esegue una query Oracle generica (passata in 'query_in') applicando un filtro su 'campo_chiave'.
-    Mantiene lo stesso comportamento di 'cerca_valore_in_db_ora':
-      - Se nessun risultato -> None
-      - Se usa_like=True e >1 risultati -> None
-      - Altrimenti ritorna il primo valore della prima riga (solo 'campo_ricerca').
+
+    Regole di ritorno (più conservative):
+      - 0 righe        -> None
+      - >1 righe       -> None
+      - esattamente 1  -> ritorna il primo valore di 'campo_ricerca'
 
     Args:
         dsn (str): Data Source Name Oracle.
         username (str): Utente Oracle.
         password (str): Password Oracle.
-        query_in (str): Query SQL di partenza (es. SELECT ... FROM ... [JOIN ...]).
-        campo_ricerca (str): Nome o alias della colonna da estrarre nel risultato finale.
+        query_in (str): Query SQL di partenza (SELECT ...).
+        campo_ricerca (str): Colonna/alias da estrarre nel risultato.
         campo_chiave (str): Colonna su cui applicare il filtro (es. a.iva).
         valore_chiave (str): Valore da cercare nel campo chiave.
-        usa_like (bool): Se True applica LIKE '%valore%', altrimenti '='.
+        usa_like (bool): True => LIKE '%valore%', False => '='.
 
     Returns:
-        Valore singolo del campo richiesto o None.
+        Valore singolo o None.
     """
+
+    # --- funzione interna per iniettare la clausola di filtro ---
+    def _inject_filter_clause(base_query: str, filter_sql: str) -> str:
+        """
+        Inserisce 'filter_sql' PRIMA di eventuali ORDER BY / OFFSET / FETCH finali,
+        usando WHERE o AND a seconda che 'base_query' abbia già una WHERE.
+        """
+        q = base_query.strip().rstrip(";")
+
+        # Trova l'eventuale "coda" (ORDER BY / OFFSET / FETCH) da riattaccare dopo il filtro
+        tail_patterns = [r"\bORDER\s+BY\b", r"\bOFFSET\b", r"\bFETCH\s+FIRST\b"]
+        tail_pos = len(q)
+        for pat in tail_patterns:
+            m = re.search(pat, q, flags=re.IGNORECASE)
+            if m:
+                tail_pos = min(tail_pos, m.start())
+
+        head = q[:tail_pos].rstrip()
+        tail = q[tail_pos:].lstrip()
+
+        # WHERE o AND?
+        if re.search(r"\bWHERE\b", head, flags=re.IGNORECASE):
+            head = f"{head} AND {filter_sql}"
+        else:
+            head = f"{head} WHERE {filter_sql}"
+
+        return f"{head} {tail}".rstrip()
+
     try:
         base_query = (query_in or "").strip().rstrip(";")
         if not base_query.lower().startswith("select"):
             raise ValueError("Il parametro 'query_in' deve essere una SELECT SQL valida.")
+        if valore_chiave is None:
+            return None
 
-        # Costruzione della clausola di filtro
+        # Filtro case-insensitive + TRIM
         if usa_like:
-            cond = f"TRIM({campo_chiave}) LIKE :valore"
+            filter_sql = f"UPPER(TRIM({campo_chiave})) LIKE UPPER(:valore_cond)"
             bind_val = f"%{str(valore_chiave).strip()}%"
         else:
-            cond = f"TRIM({campo_chiave}) = :valore"
+            filter_sql = f"UPPER(TRIM({campo_chiave})) = UPPER(:valore_cond)"
             bind_val = str(valore_chiave).strip()
 
-        # Inserisce WHERE o AND a seconda della query
-        if re.search(r"\bwhere\b", base_query, flags=re.IGNORECASE):
-            inner_query = f"{base_query} AND {cond}"
-        else:
-            inner_query = f"{base_query} WHERE {cond}"
+        # Inserisce il filtro prima di ORDER BY / OFFSET / FETCH
+        inner_query = _inject_filter_clause(base_query, filter_sql)
 
-        # Wrappa e seleziona solo il campo richiesto
+        # Seleziona solo il campo richiesto
         final_sql = f"SELECT {campo_ricerca} FROM ({inner_query}) t"
 
         with cx_Oracle.connect(user=username, password=password, dsn=dsn) as conn:
             with conn.cursor() as cursor:
-                cursor.execute(final_sql, {"valore": bind_val})
+                cursor.execute(final_sql, {"valore_cond": bind_val})
                 results = cursor.fetchall()
 
-        # Nessun risultato
-        if not results:
-            return None
-
-        # Caso LIKE: più di un record → None
-        if usa_like and len(results) > 1:
+        # ✅ Regola conservativa: restituisce solo se UNA riga esatta
+        if not results or len(results) != 1:
             return None
 
         return results[0][0]
 
     except (cx_Oracle.Error, ValueError) as e:
-        ts = dt.now(tz.utc).strftime('%Y%m%d_%H%M%S')
+        ts = dt.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
         print(f"[{ts}] Errore durante l'esecuzione della query: {e}")
         return None
+
 
 def stampa_risultati_estrazione(ret, output, titolo="DEBUG – VALORI ESTRATTI"):
     print("\n# ----------------------------------------------------")
@@ -386,13 +415,17 @@ def add_campi(mode, campi, nome_crm, key_ocr, mappa_variabili, conf_map, isDate=
     """
     if mode == "man":
         val = key_ocr  # qui key_ocr è già il valore da assegnare
+
         if isDate:
             val = to_iso_date(val)
             if not val:
-                #print(f"[add_campi] Skip {nome_crm}: data non valida")
                 return
+
+        # 🔹 forza uppercase se è una stringa
+        if isinstance(val, str):
+            val = val.upper()
+
         campi.append({"nome": nome_crm, "valore": val})
-        #print(f"[add_campi] {nome_crm} = {val}")
         return
 
     elif mode == "ai":
@@ -407,17 +440,19 @@ def add_campi(mode, campi, nome_crm, key_ocr, mappa_variabili, conf_map, isDate=
         if isDate:
             val = to_iso_date(val)
             if not val:
-                #print(f"[add_campi] Skip {nome_crm}: data OCR non valida")
                 return
 
+        # 🔹 forza uppercase se è una stringa
+        if isinstance(val, str):
+            val = val.upper()
+
         campi.append({"nome": nome_crm, "valore": val})
-        #print(f"[add_campi] {nome_crm} = {val}")
         return
 
     else:
         err = f"Mode non valido: {mode}"
-        #print(err)
         raise ValueError(err)
+
 
 def aggiornaCRM(id, ret, tipo):
 
@@ -852,14 +887,33 @@ def aggiornaCRM(id, ret, tipo):
 
         campi = []
 
-        add_campi("man",campi, "professione_c",             "P",                     mappa_variabili, conf_map,  isDate=False)
+        sede_pensione = mappa_variabili["sede_pensione"]
+
+        #Decodifica comune dell'ente pensione
+        sede_pensione = (
+            unicodedata.normalize("NFD", sede_pensione)  # separa lettere e accenti
+            .encode("ascii", "ignore")                 # rimuove accenti
+            .decode("ascii")                           # torna in stringa normale
+            .replace("'", " ")                         # sostituisce apostrofi con spazio
+            .upper()                                   # tutto maiuscolo
+            .replace(" ", "_")                         # sostituisce spazi con underscore
+        )
+
+        sede_pensione = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_ENTI_INPS",  "COD_ENTE", "ENTE", sede_pensione, False)
+        if(sede_pensione):
+            add_campi("man", campi, "site_c",               sede_pensione,           mappa_variabili, conf_map,  isDate=False)
+
+        add_campi("man",campi, "professione_ c",             "P",                     mappa_variabili, conf_map,  isDate=False)
         add_campi("ai", campi, "codice_fiscale_c",          "codice_fiscale",        mappa_variabili, conf_map,  isDate=False)
         add_campi("ai", campi, "reddito_netto_mensile_c",   "netto_obis",            mappa_variabili, conf_map,  isDate=False)
 
-        #categoria_pens Esempio VO corrisponde al un codice di tre cifre esempi 001
-        #sede_pensione  Esempio SULMONA corrisponde al un codice di quattro cifre esempio 1111
-        add_campi("ai", campi, "category_code_c",           "categoria_pens",        mappa_variabili, conf_map,  isDate=False)
-        add_campi("ai", campi, "site_c",                    "sede_pensione",         mappa_variabili, conf_map,  isDate=False)
+        #Calcolo codice categioria pensione trovato nella tabella LEATABE codtab 8366
+        query              = "SELECT DATI1,CODELE1 from LEATABE WHERE CODTAB = 8366"
+        categoria_pens     = mappa_variabili["categoria_pens"]
+        cod_categoria_pens = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "CODELE1", "DATI1", categoria_pens, False)
+
+        if(cod_categoria_pens):
+            add_campi("man", campi, "category_code_c",      cod_categoria_pens,      mappa_variabili, conf_map,  isDate=False)
 
         add_campi("ai", campi, "certificate_number_c",      "chiave_pens",           mappa_variabili, conf_map,  isDate=False)
 
