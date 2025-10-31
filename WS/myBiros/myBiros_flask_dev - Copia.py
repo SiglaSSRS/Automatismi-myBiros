@@ -1,296 +1,221 @@
-#--------------------------------------------------------------------------------------
-# (Sviluppo) – in produzione rimuovere questa manipolazione del path, se non necessaria
-#--------------------------------------------------------------------------------------
+# test
+
+###   I M P O R T   ###################################################
+
+#Da togliere per deploy <-----------------------------
 import sys
-
-import mappa_campi_crm
-sys.path.insert(0, r"C:\Projects\Automatismi\WS\SugarCRM")
-#--------------------------------------------------------------------------------------
+sys.path.insert(0, r"C:\Projects\Automatismi\WS\SugarCRM")  # parent
 
 
 
 
-
-
-# ----------------
-# 1) CONFIG & LOGGING
-# ----------------
-import io
-import os
-import json
-import locale
-import logging
-from   logging.handlers import TimedRotatingFileHandler
-from   pathlib import Path
-from   typing import Optional
-
-import unicodedata
-import cx_Oracle
-import secrets
-import werkzeug
+import base64
+import crmAgenti
 from   datetime import datetime as dt
 from   datetime import timezone as tz
-
-from flask import Flask, render_template, request, session, redirect, url_for, flash
-
-import sugarcrm as crm
-import service_pretty
-from   mappa_campi_crm import MAPPA_CAMPI
+import secrets
+from   flask import Flask, render_template, request, session, redirect, url_for, flash
+import secrets
+import locale
 import myBiros
+import os
+from   pathlib import Path
+import sugarcrm as crm
+from   typing import Optional
+import unicodedata
+import json
+import re
+import cx_Oracle
 
-# ---- Logging
-werkzeug.serving._log_add_style = False  # no formattazione nei log werkzeug
-logger = logging.getLogger("werkzeug")
+###   L O G G E R   ###################################################
+
+import logging
+from   logging.handlers import TimedRotatingFileHandler
+import werkzeug
+
+werkzeug.serving._log_add_style = False # no formattazione nei log
+
+logger = logging.getLogger('werkzeug')
 logger.setLevel(logging.DEBUG)
 
+# 1. Handler per file rotanti giornalieri
 file_handler = TimedRotatingFileHandler("myBiros_CRM_prod.log", when="midnight", backupCount=30)
 file_handler.suffix = "%Y%m%d"
 file_handler.setLevel(logging.DEBUG)
-file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(file_formatter)
 
+# 2. Handler per console
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)
-console_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 console_handler.setFormatter(console_formatter)
 
+# Evita doppie scritture
 if not logger.handlers:
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
 
-# ---- Locale
-locale.setlocale(locale.LC_ALL, "it_IT")
 
-# ---- App constants
+###   C O S T A N T I   ###############################################
+
 PORT = 7200
 
-# ---- CRM credentials
-# Nota: nel file originale url/usr/pwd venivano ridefiniti due volte (prod e demo).
-# Qui gestiamo entrambe le configurazioni e selezioniamo via env var senza cambiare le funzioni a valle.
-CRM_CFG = {
-    "prod": {
-        "url": "https://siglacredit.lionsolution.it/service/v4/rest.php",
-        "usr": "edp",
-        "pwd": "Edp2010$",
-    },
-    "demo": {
-        "url": "https://demosiglacredit.lionsolution.it/service/v4/rest.php",
-        "usr": "cattai.denis",
-        "pwd": "@Zr4ppZ34WxW",
-    },
-}
-CRM_ENV = os.getenv("CRM_ENV", "demo").lower()
-url = CRM_CFG.get(CRM_ENV, CRM_CFG["demo"])["url"]
-usr = CRM_CFG.get(CRM_ENV, CRM_CFG["demo"])["usr"]
-pwd = CRM_CFG.get(CRM_ENV, CRM_CFG["demo"])["pwd"]
+locale.setlocale(locale.LC_ALL, "it_IT")
 
-# ---- Connessione Oracle (prod)
-DSN_CQS = "sigladb.sigla.net/sigladb"
-USERNAME_CQS = "cqs"
-PASSWORD_CQS = "cqs"
+# WS crm Agenti (produzione)
+url = "https://siglacredit.lionsolution.it/service/v4/rest.php"
+usr = "edp"
+pwd = "Edp2010$"
+# WS crm Agenti (demo)
+url = "https://demosiglacredit.lionsolution.it/service/v4/rest.php"
+usr = "cattai.denis"
+pwd = "@Zr4ppZ34WxW"
 
-# ---- Parametri generali
+#----------------------------------------------------------------
+#CONNESSIONE DB ORACLE PROD
+#----------------------------------------------------------------
+DSN_CQS              = "sigladb.sigla.net/sigladb"
+USERNAME_CQS         = "cqs"
+PASSWORD_CQS         = "cqs"
+
+#----------------------------------------------------------------
+#DECIDERE SE PER OGNI DOCUMENTO SCARICATO e VERIFICATO CON MYBIROS
+#SE SOVRASCRIVERE IL NOME E COGNOME
+#----------------------------------------------------------------
 SOVRASCRIVI_NOME_COGNOME = True
 
-attachDir = "allegati"
-Path(attachDir).mkdir(parents=True, exist_ok=True)
+attachDir = "allegati" # cartella dove vengono salvati gli allegati del crm
+Path(attachDir).mkdir(parents = True, exist_ok = True) # se non esiste, viene creata
 
-# Mappatura documenti
-# CAI: Carta Identità, PAT: Patente, PAS: Passaporto, TS: Tessera Sanitaria, PS: Permesso soggiorno
-# OBIS, BP: Busta paga, CP: Cedolino pensione, PE: Privacy Estesa, MC: Merito Creditizio, CS: Certificato Stipendio
-# CUD, F24
-TIPI_DOC = ["CAI", "PAT", "PAS", "TS", "BP", "OBIS", "CP", "PE", "MC", "CS", "CUD", "PS", "F24"]
-MIN_CONF = 0.80  # soglia confidence
+#---------------------------------------------------------------------------------
+#CAI = CARTA IDENTITA
+#PAT = PATENTE
+#PAS = PASSAPORTO
+#TS  = TESSERA SANITARIA
+#PS  = PERMESSO DI SOGGIORNO
 
+#OBIS= OBIS
+#BP  = BUSTA PAGA
+#CP  = CEDOLINO PENSIONE
+#PE  = PRIVACY ESTESA
 
-# ----------------
-# 2) HELPER GENERICI
-# ----------------
-def to_iso_date(s: str) -> Optional[str]:
-    """Converte stringhe data comuni in ISO YYYY-MM-DD. Ritorna None se non riconosciuta."""
-    if s is None:
-        return None
-    s = str(s).strip()
-    if not s:
-        return None
-    try:
-        return dt.strptime(s, "%Y-%m-%d").strftime("%Y-%m-%d")
-    except ValueError:
-        pass
-    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%d-%m-%y", "%d.%m.%y"):
-        try:
-            return dt.strptime(s, fmt).strftime("%Y-%m-%d")
-        except ValueError:
-            continue
-    return None
+#MC:   MERITO CREDITIZIO
+#CS:   CERTIFICATO PENSIONE
+#CUD:  CUD
+#F24:  F24
+#---------------------------------------------------------------------------------
 
+TIPI_DOC = ["CAI", "PAT", "PAS", "TS", "BP", "OBIS", "CP", "PE", "MC", "CS", "CUD", "PS", "F24"] # mappatura documenti su CRM (provvisoria)
+MIN_CONF = 0.80 # soglia confidence
 
-def to_bool(value) -> bool:
-    return str(value).strip().lower() == "true"
+###   F U N Z I O N I   ###############################################
 
-
-def add_campi(mode: str,
-              campi: list,
-              nome_crm: str,
-              key_ocr: str,
-              mappa_variabili: dict,
-              conf_map: dict,
-              isDate: bool = False) -> None:
-    """
-    mode = "ai"  → prende da mappa_variabili/conf_map e applica soglia MIN_CONF
-    mode = "man" → inserisce direttamente key_ocr come valore
-    isDate = True → applica conversione a ISO (YYYY-MM-DD)
-    """
-    if mode == "man":
-        val = key_ocr
-        if isDate:
-            val = to_iso_date(val)
-            if not val:
-                return
-        if isinstance(val, str):
-            val = val.upper()
-        campi.append({"nome": nome_crm, "valore": val})
-        return
-
-    if mode == "ai":
-        val = mappa_variabili.get(key_ocr)
-        conf = conf_map.get(key_ocr, 0.0)
-        if not val:
-            return
-        if conf < MIN_CONF:
-            return
-        if isDate:
-            val = to_iso_date(val)
-            if not val:
-                return
-        if isinstance(val, str):
-            val = val.upper()
-        campi.append({"nome": nome_crm, "valore": val})
-        return
-
-    raise ValueError(f"Mode non valido: {mode}")
-
-
-def stampa_risultati_estrazione(ret, output, titolo="DEBUG – VALORI ESTRATTI") -> None:
-    print("\n# ----------------------------------------------------")
-    print(f"# {titolo}")
-    print("# ----------------------------------------------------")
-
-    error_code = ret[0]
-    error_detail = json.loads(ret[1].decode("utf-8"))
-
-    if error_code != 200:
-        print(f"Errore myBiros {error_code}: {error_detail['detail']}")
-
-    if not output:
-        print("⚠️ Nessun risultato da mostrare.")
-        print("# ----------------------------------------------------\n")
-        return
-
-    if all(isinstance(el, dict) for el in output):
-        output = [output]
-
-    for i, page_data in enumerate(output, start=1):
-        print(f"\n📄 Pagina {i}:")
-        if not page_data:
-            print("  ⚠️ Nessun dato in questa pagina.")
-            continue
-        for item in page_data:
-            if not isinstance(item, dict):
-                print(f"  ⚠️ Elemento non valido: {item}")
-                continue
-            tipo = item.get("tipo", "—")
-            key = tipo.lower().replace(" ", "_") if isinstance(tipo, str) else "—"
-            valore = item.get("valore", "—")
-            item_id = item.get("id", "—")
-            conf_raw = str(item.get("confidence", "0")).replace(",", ".")
-            try:
-                conf_val = float(conf_raw)
-                conf_str = f"{conf_val:.2f}"
-            except (ValueError, TypeError):
-                conf_str = str(conf_raw)
-            print(f"  - [{key}] {tipo}: {valore}  (conf: {conf_str}, id: {item_id})")
-    print("\n# ----------------------------------------------------\n")
-
-
-# ----------------
-# 3) HELPER DB ORACLE
-# ----------------
-def cerca_valore_in_db_ora(dsn: str,
-                           username: str,
-                           password: str,
-                           nome_tabella: str,
-                           campo_ricerca: str,
-                           campo_chiave: str,
-                           valore_chiave: str,
-                           usa_like: bool):
+def cerca_valore_in_db_ora(dsn, username, password, nome_tabella, campo_ricerca, campo_chiave, valore_chiave, usa_like):
     """
     Cerca il valore di un campo specifico in una tabella Oracle.
     Se usa LIKE e trova più di un record, restituisce None.
     """
+
     try:
+        # Crea la connessione a Oracle
         conn = cx_Oracle.connect(user=username, password=password, dsn=dsn)
         cursor = conn.cursor()
-
+        
+        # Crea la query dinamicamente
         if usa_like:
             query = f"""
-                SELECT {campo_ricerca}
-                FROM {nome_tabella}
+                SELECT {campo_ricerca} 
+                FROM {nome_tabella} 
                 WHERE TRIM({campo_chiave}) LIKE '%{valore_chiave}%'
             """
         else:
             query = f"""
-                SELECT {campo_ricerca}
-                FROM {nome_tabella}
+                SELECT {campo_ricerca} 
+                FROM {nome_tabella} 
                 WHERE TRIM({campo_chiave}) = '{valore_chiave}'
             """
-
+        
+        # Esegui la query
         cursor.execute(query)
         results = cursor.fetchall()
+        
+        # Chiudi risorse
         cursor.close()
         conn.close()
 
+        # Nessun risultato
         if not results:
             return None
+        
+        # Caso LIKE: se più di un record → None
         if usa_like and len(results) > 1:
             return None
+        
+        # Caso normale o LIKE con 1 solo risultato
         return results[0][0]
 
     except cx_Oracle.DatabaseError as e:
         logger.info(f"Errore durante la connessione al database: {e}")
         return None
 
+import re
+import cx_Oracle
+from datetime import datetime as dt, timezone
 
-def cerca_valore_in_db_ora_query(dsn: str,
-                                 username: str,
-                                 password: str,
-                                 query_in: str,
-                                 campo_ricerca: str,
-                                 campo_chiave: str,
+def cerca_valore_in_db_ora_query(dsn, username, password,
+                                 query_in,
+                                 campo_ricerca,
+                                 campo_chiave,
                                  valore_chiave,
-                                 usa_like: bool):
+                                 usa_like):
     """
     Esegue una query Oracle generica (passata in 'query_in') applicando un filtro su 'campo_chiave'.
-    Ritorna:
-      - None se 0 o >1 righe
-      - Valore singolo del 'campo_ricerca' se esattamente 1 riga
-    """
-    import re  # usato solo qui per l'iniezione filtri
 
+    Regole di ritorno (più conservative):
+      - 0 righe        -> None
+      - >1 righe       -> None
+      - esattamente 1  -> ritorna il primo valore di 'campo_ricerca'
+
+    Args:
+        dsn (str): Data Source Name Oracle.
+        username (str): Utente Oracle.
+        password (str): Password Oracle.
+        query_in (str): Query SQL di partenza (SELECT ...).
+        campo_ricerca (str): Colonna/alias da estrarre nel risultato.
+        campo_chiave (str): Colonna su cui applicare il filtro (es. a.iva).
+        valore_chiave (str): Valore da cercare nel campo chiave.
+        usa_like (bool): True => LIKE '%valore%', False => '='.
+
+    Returns:
+        Valore singolo o None.
+    """
+
+    # --- funzione interna per iniettare la clausola di filtro ---
     def _inject_filter_clause(base_query: str, filter_sql: str) -> str:
+        """
+        Inserisce 'filter_sql' PRIMA di eventuali ORDER BY / OFFSET / FETCH finali,
+        usando WHERE o AND a seconda che 'base_query' abbia già una WHERE.
+        """
         q = base_query.strip().rstrip(";")
+
+        # Trova l'eventuale "coda" (ORDER BY / OFFSET / FETCH) da riattaccare dopo il filtro
         tail_patterns = [r"\bORDER\s+BY\b", r"\bOFFSET\b", r"\bFETCH\s+FIRST\b"]
         tail_pos = len(q)
         for pat in tail_patterns:
             m = re.search(pat, q, flags=re.IGNORECASE)
             if m:
                 tail_pos = min(tail_pos, m.start())
+
         head = q[:tail_pos].rstrip()
         tail = q[tail_pos:].lstrip()
+
+        # WHERE o AND?
         if re.search(r"\bWHERE\b", head, flags=re.IGNORECASE):
             head = f"{head} AND {filter_sql}"
         else:
             head = f"{head} WHERE {filter_sql}"
+
         return f"{head} {tail}".rstrip()
 
     try:
@@ -300,6 +225,7 @@ def cerca_valore_in_db_ora_query(dsn: str,
         if valore_chiave is None:
             return None
 
+        # Filtro case-insensitive + TRIM
         if usa_like:
             filter_sql = f"UPPER(TRIM({campo_chiave})) LIKE UPPER(:valore_cond)"
             bind_val = f"%{str(valore_chiave).strip()}%"
@@ -307,7 +233,10 @@ def cerca_valore_in_db_ora_query(dsn: str,
             filter_sql = f"UPPER(TRIM({campo_chiave})) = UPPER(:valore_cond)"
             bind_val = str(valore_chiave).strip()
 
+        # Inserisce il filtro prima di ORDER BY / OFFSET / FETCH
         inner_query = _inject_filter_clause(base_query, filter_sql)
+
+        # Seleziona solo il campo richiesto
         final_sql = f"SELECT {campo_ricerca} FROM ({inner_query}) t"
 
         with cx_Oracle.connect(user=username, password=password, dsn=dsn) as conn:
@@ -315,69 +244,97 @@ def cerca_valore_in_db_ora_query(dsn: str,
                 cursor.execute(final_sql, {"valore_cond": bind_val})
                 results = cursor.fetchall()
 
+        # ✅ Regola conservativa: restituisce solo se UNA riga esatta
         if not results or len(results) != 1:
             return None
+
         return results[0][0]
 
     except (cx_Oracle.Error, ValueError) as e:
-        ts = dt.now(tz.utc).strftime("%Y%m%d_%H%M%S")
+        ts = dt.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
         print(f"[{ts}] Errore durante l'esecuzione della query: {e}")
         return None
 
 
-# ----------------
-# 4) INTEGRAZIONE CRM & MYBIROS
-# ----------------
-def scaricaAllegatiContatto(id: str):
-    """Scarica allegati da CRM, ritorna lista file filtrata per TIPI_DOC."""
+def stampa_risultati_estrazione(ret, output, titolo="DEBUG – VALORI ESTRATTI"):
+    print("\n# ----------------------------------------------------")
+    print(f"# {titolo}")
+    print("# ----------------------------------------------------")
+
+    error_code = ret[0]
+    error_detail = json.loads(ret[1].decode('utf-8'))
+
+    # Stampa i risultati se errore
+    if(error_code != 200):
+        print(f"Errore myBiros {error_code}: {error_detail['detail']}")
+
+    if not output:
+        print("⚠️ Nessun risultato da mostrare.")
+        print("# ----------------------------------------------------\n")
+        return
+
+    # Se output è una lista di dict, normalizza a lista di liste
+    if all(isinstance(el, dict) for el in output):
+        output = [output]
+
+    for i, page_data in enumerate(output, start=1):
+        print(f"\n📄 Pagina {i}:")
+
+        if not page_data:
+            print("  ⚠️ Nessun dato in questa pagina.")
+            continue
+
+        for item in page_data:
+            if not isinstance(item, dict):
+                print(f"  ⚠️ Elemento non valido: {item}")
+                continue
+
+            # Crea la chiave "parlante" a partire da tipo
+            tipo = item.get("tipo", "—")
+            key = tipo.lower().replace(" ", "_") if isinstance(tipo, str) else "—"
+
+            valore = item.get("valore", "—")
+            item_id = item.get("id", "—")
+
+            # Gestione confidence (stringa → float)
+            conf_raw = str(item.get("confidence", "0")).replace(",", ".")
+            try:
+                conf_val = float(conf_raw)
+                conf_str = f"{conf_val:.2f}"
+            except (ValueError, TypeError):
+                conf_str = str(conf_raw)
+
+            print(f"  - [{key}] {tipo}: {valore}  (conf: {conf_str}, id: {item_id})")
+
+    print("\n# ----------------------------------------------------\n")
+
+
+
+def scaricaAllegatiContatto(id):
     try:
         s = crm.Session(url, usr, pwd)
-        notes = s.get_entry_list(crm.Note(contact_id=id))
+        notes = s.get_entry_list(crm.Note(contact_id = id)) # tutte le note collegate al contatto
         files = []
         for note in notes:
-            file = s.get_note_attachment(note)["note_attachment"]
-            ext = os.path.splitext(file["filename"])[1][1:].lower()
-            files.append({
-                "nome": note.name,
-                "estensione": ext,
-                "tipo": note.description,
-                "document_type": note.document_type,
-                "b64": file["file"],
-            })
-        files = [f for f in files if f["tipo"] in TIPI_DOC]
+            file = s.get_note_attachment(note)["note_attachment"] # allegato
+            ext = os.path.splitext(file["filename"])[1][1:].lower() # estensione del file, senza punto e in minuscolo
+            #with open(os.path.join(attachDir, file["filename"]), "wb") as f: f.write(base64.b64decode(file["file"])) # salva copia in locale
+            files.append({"nome": note.name, "estensione": ext, "tipo": note.description, "document_type": note.document_type, "b64": file["file"]})
+
+        files = [f for f in files if f["tipo"] in TIPI_DOC] # tengo solo i documenti d'interesse
         return files
-    except Exception as e:
-        logger.info(e)
-        return False
+    except Exception as e: logger.info(e); return False
 
-def aggiornaContatto(id: str, campi: list) -> bool:
-    """Aggiorna i campi del contatto in CRM. campi: [{nome, valore}, ...]"""
-    try:
-        session_crm = crm.Session(url, usr, pwd)
-        opportunity = session_crm.get_entry("Contacts", id)
-
-        output_pretty = []  # raccolgo qui solo i campi effettivamente aggiornati
-
-        for campo in campi:
-            nome = campo["nome"]
-            valore = campo["valore"]
-            if hasattr(opportunity, nome):
-                setattr(opportunity, nome, valore)
-                logger.info(f"Aggiornamento CRM ({id}): {nome} = {valore}")
-                output_pretty.append({"tipo": nome, "valore": valore})  
-
-        # Persiste sul CRM
-        session_crm.set_entry(opportunity)
-
-        # --- STAMPA PRETTY SU STDOUT ---
-        service_pretty.pretty_output(output_pretty, best_conf=False)
-
+def aggiornaContatto(id, campi):
+    try: 
+        session = crm.Session(url, usr, pwd)
+        opportunity = session.get_entry("Contacts", id)
+        for campo in campi: 
+            if hasattr(opportunity, campo["nome"]):
+                setattr(opportunity, campo["nome"], campo["valore"])
+        session.set_entry(opportunity)
         return True
-
-    except Exception as e:
-        logger.exception(f"Errore durante l'aggiornamento del contatto {id}: {e}")
-        return False
-
+    except: return False
 
 def analizzaDocumento(tipo, document_type, b64, estensione):
 
@@ -423,157 +380,119 @@ def analizzaDocumento(tipo, document_type, b64, estensione):
     stampa_risultati_estrazione(ret, output, tipo)
     return output
 
-def _build_plan_minimo(id_contatto, output_documenti):
+def to_iso_date(s: str) -> Optional[str]:
     """
-    Crea un piano di proposte minimo per la review.
-    Propone solo i campi con valore valido, confidence >= 70,
-    e che risultano effettivamente mappati in MAPPA_CAMPI per quel tipo documento.
+    Converte stringhe data comuni in ISO YYYY-MM-DD.
+    Restituisce None se non riconosce il formato.
     """
-    plan = []
+    if s is None:
+        return None
+    s = str(s).strip()
+    if not s:
+        return None
 
+    # Già ISO?
+    try:
+        return dt.strptime(s, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        pass
+
+    # Formati europei più comuni
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%d-%m-%y", "%d.%m.%y"):
+        try:
+            return dt.strptime(s, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
+    return None
+
+def to_bool(value):
+    return str(value).strip().lower() == "true"
+
+def add_campi(mode, campi, nome_crm, key_ocr, mappa_variabili, conf_map, isDate=False):
+    """
+    mode = "ai"  → prende da mappa_variabili/conf_map e applica soglia MIN_CONF
+    mode = "man" → inserisce direttamente key_ocr come valore
+    isDate = True → applica conversione a ISO (YYYY-MM-DD)
+    """
+    if mode == "man":
+        val = key_ocr  # qui key_ocr è già il valore da assegnare
+
+        if isDate:
+            val = to_iso_date(val)
+            if not val:
+                return
+
+        # 🔹 forza uppercase se è una stringa
+        if isinstance(val, str):
+            val = val.upper()
+
+        campi.append({"nome": nome_crm, "valore": val})
+        return
+
+    elif mode == "ai":
+        val = mappa_variabili.get(key_ocr)
+        conf = conf_map.get(key_ocr, 0.0)
+
+        if not val:
+            return
+        if conf < MIN_CONF:
+            return
+
+        if isDate:
+            val = to_iso_date(val)
+            if not val:
+                return
+
+        # 🔹 forza uppercase se è una stringa
+        if isinstance(val, str):
+            val = val.upper()
+
+        campi.append({"nome": nome_crm, "valore": val})
+        return
+
+    else:
+        err = f"Mode non valido: {mode}"
+        raise ValueError(err)
+
+def _build_plan_minimo(output_documenti):
+    """Gestisce sia singolo dict sia lista di documenti."""
+    plan = []
     if isinstance(output_documenti, dict):
         output_documenti = [output_documenti]
 
     for doc in output_documenti:
-        tipo_doc = str(doc.get("tipo", "—")).upper()
+        tipo_doc = doc.get("tipo", "—")
         dati = doc.get("dati", [])
-        campi_previsti = [
-            campo["campo_mybiros"].lower().replace(" ", "_")
-            for campo in MAPPA_CAMPI.get(tipo_doc, [])
-        ]
-
-        for pagina in (dati if isinstance(dati, list) else [dati]):
-            items = [pagina] if isinstance(pagina, dict) else (pagina or [])
-
+        for pagina in dati:
+            if isinstance(pagina, dict):
+                items = [pagina]
+            else:
+                items = pagina or []
             for item in items:
-                valore = item.get("valore")
-                conf_raw = item.get("confidence", 0)
-                try:
-                    conf = float(str(conf_raw).replace(",", "."))
-                except Exception:
-                    conf = 0.0
-
-                # Normalizza nome campo (myBiros)
-                nome_campo_norm = str(item.get("campo", item.get("tipo", ""))).lower().replace(" ", "_")
-
-                # ✅ Filtri
-                if not valore:
-                    continue
-                if conf < 70:
-                    continue
-                if tipo_doc not in MAPPA_CAMPI:
-                    continue
-                if nome_campo_norm not in campi_previsti:
-                    continue
-
-                # Debug di cosa passa i filtri
-                print(f"[DEBUG] OK per {tipo_doc}: {nome_campo_norm} ({conf:.2f}%) → {valore}")
-
-                # Trova campo_crm corrispondente
-                campo_crm = next(
-                    (
-                        c["campo_crm"]
-                        for c in MAPPA_CAMPI.get(tipo_doc, [])
-                        if c["campo_mybiros"].lower().replace(" ", "_") == nome_campo_norm
-                    ),
-                    None
-                )
-
-                # Recupero valore attuale dal CRM 
-                valore_attuale = ""
-                if campo_crm:
-                    try:
-                        session_crm = crm.Session(url, usr, pwd)
-                        c = session_crm.get_entry("Contacts", id_contatto)
-
-                        # gestione attributo o dict
-                        if hasattr(c, campo_crm):
-                            valore_attuale = getattr(c, campo_crm, "")
-                        elif isinstance(c, dict) and campo_crm in c:
-                            valore_attuale = c.get(campo_crm, "")
-
-                        print(f"[CRM] {campo_crm} → {valore_attuale}")
-
-                    except Exception as e:
-                        print(f"[CRM] errore lettura {campo_crm} su {id_contatto}: {e}")
-
-                # Recupera descrizione leggibile del documento
-                tipo_doc_descrittivo = mappa_campi_crm.DOC_DESCR.get(tipo_doc, tipo_doc)
-
-                # Aggiungi al piano (mantengo struttura esistente; aggiungo info opzionali utili)
                 plan.append({
                     "tipo_doc": tipo_doc,
-                    "tipo_doc_descrittivo": tipo_doc_descrittivo,
                     "campo": item.get("campo", item.get("tipo")),
                     "label": item.get("tipo") or item.get("campo"),
-                    "valore_nuovo": valore,
-                    "confidence": conf,
+                    "valore_nuovo": item.get("valore"),
+                    "confidence": item.get("confidence"),
                     "origine": "myBiros",
-                    "campo_crm": campo_crm,               # opzionale, utile in review
-                    "valore_attuale": valore_attuale,     # opzionale, utile in review
                 })
-
     return plan
 
-def proponi_aggiornamentoCRM(id_contatto: str, output_documenti):
-    """Popola sessione per la review e porta alla pagina result."""
-    plan = _build_plan_minimo(id_contatto, output_documenti)
+def proponi_aggiornamentoCRM(id_contatto, output_documenti):
+    plan  = _build_plan_minimo(output_documenti)
     token = secrets.token_urlsafe(16)
-    session["review_plan"] = plan
-    session["review_token"] = token
-    session["review_contact_id"] = id_contatto
-    session["show_review"] = True
-    return redirect(url_for("result"))
 
+    session['review_plan']        = plan
+    session['review_token']       = token
+    session['review_contact_id']  = id_contatto
+    session['show_review']        = True   # abilita la sezione tabella in result.html
 
-def _cleanup_review_session() -> None:
-    """Rimuove i dati temporanei della review dalla sessione."""
-    for k in ("review_plan", "review_token", "review_contact_id"):
-        session.pop(k, None)
+    # Torna SEMPRE alla result
+    return redirect(url_for('result'))
 
-
-def _group_selection_for_aggiornaCRM(plan: list, selections: list) -> list:
-    """
-    Converte i campi selezionati dal form in payload per aggiornaCRM.
-    Ritorna: [{"tipo": <tipo_doc>, "dati": [ [ {campo,tipo,valore,confidence}, ... ] ]}]
-    """
-    idx = {}
-    for r in plan:
-        c = str(r.get("campo"))
-        v = str(r.get("valore_nuovo"))
-        if c and v:
-            idx[(c, v)] = r
-
-    by_doc = {}
-    for raw in selections:
-        if "|" not in raw:
-            continue
-        campo, nuovo = raw.split("|", 1)
-        r = idx.get((str(campo), str(nuovo)))
-        if not r:
-            continue
-        tipo_doc = r.get("tipo_doc", "—")
-        label = r.get("label") or r.get("campo")
-        conf = r.get("confidence")
-        by_doc.setdefault(tipo_doc, []).append({
-            "campo": campo,
-            "tipo": label,
-            "valore": nuovo,
-            "confidence": conf
-        })
-
-    payloads = []
-    for tipo_doc, items in by_doc.items():
-        if not items:
-            continue
-        payloads.append({"tipo": tipo_doc, "dati": [items]})
-    return payloads
-
-
-# ----------------
-# 5) BUSINESS: aggiornaCRM
-# ----------------
-def aggiornaCRM(id: str, ret, tipo: str) -> bool:
+def aggiornaCRM(id, ret, tipo):
 
     """
     # Se ret è una lista di una lista, lo "appiattisco", i documenti di riconoscimento rispetto alle altre tipologie bisogna recupeare
@@ -639,8 +558,8 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
 
     #Per vedere i campi reali recuperari da myBiros per implementare vari tipi di documenti
     #--------------------------------------------------------------------------------------------
-    #logger.info(f"Valore di ret      in aggiornaCRM: {ret}")
-    #logger.info(f"Valore di conf_map in aggiornaCRM: {conf_map}")
+    logger.info(f"Valore di ret      in aggiornaCRM: {ret}")
+    logger.info(f"Valore di conf_map in aggiornaCRM: {conf_map}")
 
     #Tutti i documenti di riconoscimento
     if category_field:
@@ -649,8 +568,8 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         #CARTA DI IDENTITA --------------------------------------------------
         if category_val == "id_card":
 
-            #logger.info("DEBUG - CAMPI MAPPATI")
-            #logger.info(mappa_variabili)
+            logger.info("DEBUG - CAMPI MAPPATI")
+            logger.info(mappa_variabili)
 
             campi = []
         
@@ -752,13 +671,13 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             else: 
                 logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
 
-            
+            logger.info(f"Aggiornamento:{category_val} {campi}")
 
         #PATENTE --------------------------------------------------
         if category_val == "driver_license":
 
-            #logger.info("DEBUG - CAMPI MAPPATI")
-            #logger.info(mappa_variabili)
+            logger.info("DEBUG - CAMPI MAPPATI")
+            logger.info(mappa_variabili)
 
             campi = []
 
@@ -805,13 +724,13 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             else: 
                 logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
 
-            
+            logger.info(f"Aggiornamento:{category_val} {campi}")
 
         #PASSAPORTO --------------------------------------------------
         if category_val == "passport":
 
-            #logger.info("DEBUG - CAMPI MAPPATI")
-            #logger.info(mappa_variabili)
+            logger.info("DEBUG - CAMPI MAPPATI")
+            logger.info(mappa_variabili)
 
             campi = []
 
@@ -894,19 +813,16 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             #potrebbe essere presente un documento gia inserito
             add_campi("man",campi, "municipality_of_issue", " ",                       mappa_variabili, conf_map,  isDate=False)         
         
-            if aggiornaContatto(id, campi): 
-                logger.info("CRM AGGIORNATO")
-                did_update = True
-            else: 
-                logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")    
+            if aggiornaContatto(id, campi): logger.info("CRM AGGIORNATO")
+            else: logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")    
 
-            
+            logger.info(f"Aggiornamento:{category_val} {campi}")
 
         #DOCUMENTO CODICE FISCALE --------------------------------------------------
         if category_val == "health_card":
 
-            #logger.info("DEBUG - CAMPI MAPPATI")
-            #logger.info(mappa_variabili)
+            logger.info("DEBUG - CAMPI MAPPATI")
+            logger.info(mappa_variabili)
 
             campi = []
 
@@ -943,13 +859,13 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             else: 
                 logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
 
-            
+            logger.info(f"Aggiornamento:{category_val} {campi}")
 
         #PERMESSO DI SOGGIORNO --------------------------------------------------
         if category_val == "residence_permit":            
 
-            #logger.info("DEBUG - CAMPI MAPPATI")
-            #logger.info(mappa_variabili)
+            logger.info("DEBUG - CAMPI MAPPATI")
+            logger.info(mappa_variabili)
 
             campi = []
 
@@ -1000,7 +916,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             else: 
                 logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
 
-                     
+            logger.info(f"Aggiornamento:{category_val} {campi}")         
 
     #OBIS -------------------------------------------------------
     if tipo == "OBIS":
@@ -1019,8 +935,8 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         #Lordo Pensione		    Campo    
         #Sede pensione (citta)  Campo	site_c                      sede_pensione
 
-        #logger.info("DEBUG - CAMPI MAPPATI")
-        #logger.info(mappa_variabili)
+        logger.info("DEBUG - CAMPI MAPPATI")
+        logger.info(mappa_variabili)
 
         campi = []
 
@@ -1060,7 +976,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         else: 
             logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
 
-          
+        logger.info(f"Aggiornamento:{category_val} {campi}")  
 
     #BP BUSTA PAGA
     if tipo == "BP":
@@ -1093,8 +1009,8 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         #Multa/Provvedimento disciplinare
         #Paga oraria
 
-        #logger.info("DEBUG - CAMPI MAPPATI")
-        #logger.info(mappa_variabili)
+        logger.info("DEBUG - CAMPI MAPPATI")
+        logger.info(mappa_variabili)
 
         campi = []
 
@@ -1164,7 +1080,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         else: 
             logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
 
-          
+        logger.info(f"Aggiornamento:{category_val} {campi}")  
 
     #CEDOLINO PENSIONE
     if tipo == "CP":
@@ -1184,14 +1100,10 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         #Recupero obbligatorio		            altri_prestiti_rata1_c
         #Prestito		
 
-        #logger.info("DEBUG - CAMPI MAPPATI")
-        #logger.info(mappa_variabili)
+        logger.info("DEBUG - CAMPI MAPPATI")
+        logger.info(mappa_variabili)
 
         campi = []
-
-        if(SOVRASCRIVI_NOME_COGNOME):
-            add_campi("ai",     campi, "first_name",      "nome",        mappa_variabili, conf_map,  isDate=False)
-            add_campi("ai",     campi, "last_name",       "cognome",     mappa_variabili, conf_map,  isDate=False)  
 
         add_campi("man", campi, "professione_c",             "P",                            mappa_variabili, conf_map,isDate=False)
         add_campi("ai",  campi, "codice_fiscale_c",          "codice_fiscale",               mappa_variabili, conf_map,isDate=False)
@@ -1207,7 +1119,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         else: 
             logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
 
-             
+        logger.info(f"Aggiornamento:{category_val} {campi}")     
 
     #MERITO CREDITIZIO
     if tipo == "MC": 
@@ -1237,8 +1149,8 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         #Data	                                Campo 	
         #Firma Modulo	                        Firma	  
 
-        #logger.info("DEBUG - CAMPI MAPPATI")
-        #logger.info(mappa_variabili)
+        logger.info("DEBUG - CAMPI MAPPATI")
+        logger.info(mappa_variabili)
 
         campi = []
 
@@ -1283,7 +1195,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         else: 
             logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
 
-          
+        logger.info(f"Aggiornamento:{category_val} {campi}")  
 
     #CUD
     if tipo == "CUD":
@@ -1323,8 +1235,8 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         #TFR (812)	                        -
         #TFR (813)	                        -
 		
-        #logger.info("DEBUG - CAMPI MAPPATI")
-        #logger.info(mappa_variabili)
+        logger.info("DEBUG - CAMPI MAPPATI")
+        logger.info(mappa_variabili)
 
         campi = []
 
@@ -1428,7 +1340,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         else: 
             logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
 
-          
+        logger.info(f"Aggiornamento:{category_val} {campi}")  
 
     #CERITFICATO STIPENDIO
     if tipo == "CS":
@@ -1460,8 +1372,8 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         #CIG		
         #Cassa Edile		
 
-        #logger.info("DEBUG - CAMPI MAPPATI")
-        #logger.info(mappa_variabili)
+        logger.info("DEBUG - CAMPI MAPPATI")
+        logger.info(mappa_variabili)
 
         campi = []
 
@@ -1520,56 +1432,114 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         else: 
             logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
 
-          
+        logger.info(f"Aggiornamento:{category_val} {campi}")  
 
     return did_update
-    
-# ----------------
-# 6) FLASK APP & ROUTES (ordine di chiamata)
-# ----------------
+
+###   M A I N   #######################################################
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY") or "you-will-never-guess"  # provvisoria
+app.secret_key = os.environ.get("SECRET_KEY") or "you-will-never-guess" # provvisoria
 
-
-@app.route("/", methods=["GET"])
-def index():
-    # reset session
+@app.route('/', methods=['GET'])
+def index(): 
     for key in ["id", "esito", "messaggio", "start"]:
         session.pop(key, None)
     session["start"] = dt.now(tz.utc)
     session["id"] = request.args.get("id")
-    # landing con spinner
     return render_template("loading.html", title="Analisi documenti")
 
 
-@app.route("/analizza", methods=["GET"])
+@app.route('/result', methods=['GET'])
+def result(): 
+    show_review = session.get("show_review", False)
+    plan = session.get("review_plan") if show_review else []
+
+    return render_template(
+        "result.html",
+        title="Analisi documenti",
+        esito=session.get("esito", ""),
+        messaggio=session.get("messaggio", ""),
+        show_review=show_review,
+        plan=plan,
+        token=session.get("review_token", ""),
+        id_contatto=session.get("review_contact_id", "")
+    )
+
+"""
+@app.route('/analizza', methods=['GET'])
+def analizza():
+    logger.info("SESSION: %s", session) # cookies salvati
+    id = session["id"] # recupero l'id del contatto dai cookies
+
+    documenti = scaricaAllegatiContatto(id)
+
+    if documenti:
+        output = []
+        logger.info("DOCUMENTI SCARICATI: %s", len(documenti))
+        for doc in documenti: 
+            logger.info("%s: %s, %s, %s", doc["nome"], doc["tipo"], doc["document_type"], doc["estensione"])
+
+            #Una volta scarticato il documento esso viene analizzato da myBiros
+            dati = analizzaDocumento(doc["tipo"], doc["document_type"], doc["b64"], doc["estensione"])
+
+            if dati: 
+                output.append({"tipo": doc["tipo"], "dati": dati})
+            else:  logger.warning("ERRORE NELL'ESTRAZIONE DATI O NESSUN DATO ESTRATTO")
+        if output: 
+            logger.info("OUTPUT: %s", output)
+            session["esito"] = "Analizzato 1 documento" if len(output) == 1 else "Analizzati " + str(len(output)) + " documenti"
+            session["messaggio"] = "Ricaricare la pagina del CRM per verificare i dati estratti."
+
+            #Ho i dati estratti da myBiros, ora aggiorno il CRM
+            for doc in output: aggiornaCRM(id, doc["dati"], doc["tipo"])
+
+        else: 
+            logger.warning("DOCUMENTI SCARICATI MA NESSUN DATO ESTRATTO")
+            session["esito"] = "Errore nell'estrazione o nessun dato estratto"
+            session["messaggio"] = "Verificare i documenti presenti nel CRM e riprovare." 
+    
+    else:
+        logger.warning("NESSUN DOCUMENTO SCARICATO")
+        session["esito"] = "Errore nella ricerca o nessun documento trovato"
+        session["messaggio"] = "Verificare i documenti presenti nel CRM e riprovare."
+    
+    logger.info("TEMPO ELABORAZIONE: %s", str(dt.now(tz.utc) - session["start"])[:-5]) # calcolo tempo dalla richiesta iniziale
+    return documenti or []
+
+"""
+@app.route('/analizza', methods=['GET'])
 def analizza():
     logger.info("SESSION: %s", session)
-    id_contatto = session.get("id")
+    id = session["id"]
 
-    documenti = scaricaAllegatiContatto(id_contatto)
+    documenti = scaricaAllegatiContatto(id)
 
     if documenti:
         output = []
         logger.info("DOCUMENTI SCARICATI: %s", len(documenti))
         for doc in documenti:
-            #logger.info("%s: %s, %s, %s", doc["nome"], doc["tipo"], doc["document_type"], doc["estensione"])
+            logger.info("%s: %s, %s, %s", doc["nome"], doc["tipo"], doc["document_type"], doc["estensione"])
+
             dati = analizzaDocumento(doc["tipo"], doc["document_type"], doc["b64"], doc["estensione"])
+
             if dati:
                 output.append({"tipo": doc["tipo"], "dati": dati})
             else:
                 logger.warning("ERRORE NELL'ESTRAZIONE DATI O NESSUN DATO ESTRATTO")
 
         if output:
-            #logger.info("OUTPUT: %s", output)
-            session["esito"] = "Analizzato 1 documento" if len(output) == 1 else f"Analizzati {len(output)} documenti"
+            logger.info("OUTPUT: %s", output)
+            session["esito"] = "Analizzato 1 documento" if len(output) == 1 else "Analizzati " + str(len(output)) + " documenti"
             session["messaggio"] = "Ricaricare la pagina del CRM per verificare i dati estratti."
-            # → Review interattiva
-            return proponi_aggiornamentoCRM(id_contatto, output)
 
-        logger.warning("DOCUMENTI SCARICATI MA NESSUN DATO ESTRATTO")
-        session["esito"] = "Errore nell'estrazione o nessun dato estratto"
-        session["messaggio"] = "Verificare i documenti presenti nel CRM e riprovare."
+            # 🔁 INVECE DI AGGIORNARE SUBITO IL CRM, PORTA ALLA PAGINA DI REVIEW
+            return proponi_aggiornamentoCRM(id, output)
+
+        else:
+            logger.warning("DOCUMENTI SCARICATI MA NESSUN DATO ESTRATTO")
+            session["esito"] = "Errore nell'estrazione o nessun dato estratto"
+            session["messaggio"] = "Verificare i documenti presenti nel CRM e riprovare."
 
     else:
         logger.warning("NESSUN DOCUMENTO SCARICATO")
@@ -1579,55 +1549,93 @@ def analizza():
     logger.info("TEMPO ELABORAZIONE: %s", str(dt.now(tz.utc) - session["start"])[:-5])
     return []
 
+def _cleanup_review_session():
+    """Rimuove i dati temporanei della review dalla sessione."""
+    for k in ('review_plan', 'review_token', 'review_contact_id'):
+        session.pop(k, None)
 
-@app.route("/result", methods=["GET"])
-def result():
-    show_review = session.get("show_review", False)
-    plan = session.get("review_plan") if show_review else []
-    return render_template(
-        "result.html",
-        title="Analisi documenti",
-        esito=session.get("esito", ""),
-        messaggio=session.get("messaggio", ""),
-        show_review=show_review,
-        plan=plan,
-        token=session.get("review_token", ""),
-        id_contatto=session.get("review_contact_id", ""),
-    )
+def _group_selection_for_aggiornaCRM(plan, selections):
+    """
+    Converte i campi selezionati dal form in payload per aggiornaCRM.
+    Ritorna: list[{"tipo": <tipo_doc>, "dati": [ [ {campo,tipo,valore,confidence}, ... ] ]}]
+
+    Nota: mettiamo tutto in UNA pagina unica per documento (va bene per l’update).
+    """
+    # indice per validare (campo,valore) -> riga del plan
+    idx = {}
+    for r in plan:
+        c = str(r.get("campo"))
+        v = str(r.get("valore_nuovo"))
+        if c and v:
+            idx[(c, v)] = r
+
+    # raggruppo per tipo_doc
+    by_doc = {}  # tipo_doc -> [items]
+    for raw in selections:
+        if "|" not in raw:
+            continue
+        campo, nuovo = raw.split("|", 1)
+        key = (str(campo), str(nuovo))
+        r = idx.get(key)
+        if not r:
+            continue  # ignoro selezioni non coerenti con la proposta
+
+        tipo_doc = r.get("tipo_doc", "—")           # es: "OBIS", "CP", "BP", ...
+        label    = r.get("label") or r.get("campo") # questo diventa "tipo" nel dict per aggiornaCRM
+        conf     = r.get("confidence")
+
+        by_doc.setdefault(tipo_doc, []).append({
+            "campo": campo,        # non usato da aggiornaCRM, ma utile per debug
+            "tipo":  label,        # *** IMPORTANTE ***: aggiornaCRM normalizza questo nome
+            "valore": nuovo,
+            "confidence": conf
+        })
+
+    # converto ogni gruppo in un payload { tipo, dati=[[...]] }
+    payloads = []
+    for tipo_doc, items in by_doc.items():
+        if not items:
+            continue
+        payloads.append({
+            "tipo": tipo_doc,
+            "dati": [ items ]  # singola pagina con i campi selezionati
+        })
+    return payloads
 
 
-@app.route("/conferma-aggiornamento", methods=["POST"])
+@app.route('/conferma-aggiornamento', methods=['POST'])
 def conferma_aggiornamento():
-    # 1) Validazione base
-    token_form = request.form.get("token")
-    id_contatto_form = request.form.get("id_contatto")
-    token_sess = session.get("review_token")
-    id_contatto_sess = str(session.get("review_contact_id") or "")
+    # --- 1) Recupero e validazioni base ---
+    token_form = request.form.get('token')
+    id_contatto_form = request.form.get('id_contatto')
+
+    token_sess = session.get('review_token')
+    id_contatto_sess = str(session.get('review_contact_id') or "")
 
     if not token_form or token_form != token_sess:
         flash("Sessione di revisione non valida o scaduta. Ripeti l'analisi.", "warning")
         _cleanup_review_session()
-        session["show_review"] = False
-        return redirect(url_for("result"))
+        session['show_review'] = False
+        return redirect(url_for('result'))
 
     if not id_contatto_form or str(id_contatto_form) != id_contatto_sess:
         flash("Identificativo contatto non valido.", "danger")
         _cleanup_review_session()
-        session["show_review"] = False
-        return redirect(url_for("result"))
+        session['show_review'] = False
+        return redirect(url_for('result'))
 
-    plan = session.get("review_plan") or []
+    plan = session.get('review_plan') or []
     if not plan:
         flash("Nessuna proposta di aggiornamento disponibile.", "warning")
-        session["show_review"] = False
-        return redirect(url_for("result"))
+        session['show_review'] = False
+        return redirect(url_for('result'))
 
-    # 2) Selezioni dal form
-    selected = request.form.getlist("apply_fields")
+    # --- 2) Normalizzo i selezionati dal form ---
+    selected = request.form.getlist('apply_fields')
     if not selected:
         flash("Nessun campo selezionato: nessuna modifica applicata.", "info")
-        session["show_review"] = True
-        return redirect(url_for("result"))
+        session['show_review'] = True
+        return redirect(url_for('result'))
 
     allowed = {(str(r.get("campo")), str(r.get("valore_nuovo"))) for r in plan if r.get("campo")}
     to_apply = {}
@@ -1640,10 +1648,10 @@ def conferma_aggiornamento():
 
     if not to_apply:
         flash("Selezioni non valide o non coerenti con la proposta.", "warning")
-        session["show_review"] = True
-        return redirect(url_for("result"))
+        session['show_review'] = True
+        return redirect(url_for('result'))
 
-    # 3) Aggiorna CRM
+    # --- 3) Aggiorno il CRM ---
     overall_ok = False
     updated_docs = 0
     total_fields = 0
@@ -1664,24 +1672,28 @@ def conferma_aggiornamento():
     except Exception as e:
         logger.exception("Errore nella preparazione payload per aggiornaCRM: %s", e)
 
-    # 4) Esito + pulizia sessione review
+    # --- 4) Esito + pulizia sessione review ---
     if overall_ok:
         session["esito"] = "✅ Aggiornamento eseguito"
         session["messaggio"] = f"Aggiornati {total_fields} campi su {updated_docs} documento/i."
-        session["show_review"] = False
+        session['show_review'] = False
+
+        # 🔹 PULIZIA COMPLETA
         _cleanup_review_session()
         for k in ("review_plan", "review_token", "review_contact_id"):
             session.pop(k, None)
+
         flash("Aggiornamento eseguito con successo.", "success")
+
     else:
         session["esito"] = "❌ Errore aggiornamento"
         session["messaggio"] = "Si è verificato un errore durante l'aggiornamento del CRM."
-        session["show_review"] = False
+        session['show_review'] = False  # chiudi comunque la review
         _cleanup_review_session()
         flash("Errore durante l'aggiornamento del CRM. Riprovare.", "danger")
 
-    return redirect(url_for("result"))
+    # --- 5) Redirect finale ---
+    return redirect(url_for('result'))
 
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT)
+if __name__ == '__main__': app.run(host = "0.0.0.0", port = PORT) # ip e porta dove eseguire il web server

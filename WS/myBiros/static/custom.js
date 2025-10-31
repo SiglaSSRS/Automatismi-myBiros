@@ -1,21 +1,30 @@
-///   C A R I C A M E N T O   /////////////////////////////////////////
-
-function spinner(id, idEsito){ // rende visibile l'overlay di caricamento
-    document.getElementById(id).style.visibility="visible";  
-    document.getElementById(id).style.display="flex";
-
-    const alerts = document.getElementsByClassName("alert")
-    if (alerts) {
-        for (let i = 0; i < alerts.length; i++) {
-            alerts[i].style.display="none";
-        }
+// Disabilita il tasto per evitare doppi invii e mostra un testo di attesa
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('review-form');
+    if (form) {
+        form.addEventListener('submit', function () {
+            const btn = document.getElementById('btn-conferma');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = 'Aggiornamento in corso...';
+            }
+        });
     }
 
-    const esito = document.getElementById(idEsito)
-    if (esito) {esito.style.display="none";}
-}
+    // Se esiste uno spinner nella pagina, nascondilo dopo un attimo
+    const spinner = document.getElementById('spinner');
+    if (spinner) {
+        spinner.style.display = 'flex';
+        setTimeout(() => { spinner.style.display = 'none'; }, 1000);
+    }
 
-function navigate() {
-    window.location.href = 'result';
-}
-fetch('analizza').then(navigate);
+    // Se in futuro aggiungi un "seleziona tutto"
+    const toggleAll = document.getElementById('toggleSelectAll');
+    if (toggleAll) {
+        toggleAll.addEventListener('change', function () {
+            document.querySelectorAll('.row-check,input.form-check-input[type="checkbox"][name="apply_fields"]').forEach(function (c) {
+                c.checked = toggleAll.checked;
+            });
+        });
+    }
+});

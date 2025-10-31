@@ -1,70 +1,66 @@
-<!DOCTYPE html>
-<html lang="en" class="h-100">
-	<head>
-		<!-- set the encoding of your site -->
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<link rel="shortcut icon" href="{{ url_for('static', filename='icon.png') }}">
-		{% block metatags %}
-        {% endblock %}
+﻿<!DOCTYPE html>
+<html lang="it" class="h-100">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="shortcut icon" href="{{ url_for('static', filename='icon.png') }}">
+  <title>Sigla | Analisi documenti</title>
 
-		<!-- Bootstrap 5 style css -->
-		<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" 
-		      integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" 
-			  crossorigin="anonymous">
-        
-        <!-- Bootstrap Icons -->
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+  <!-- Il tuo CSS con .overlay/.spinner/.bounceX -->
+  <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+</head>
 
-		<!-- Custom styles for this template -->
-		<link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+<body class="d-flex flex-column h-100">
+<main class="flex-shrink-0">
+  <div class="container py-4">
+    <div id="spinner" class="overlay">
+      <div class="spinner">
+        <div class="bounce1"></div>
+        <div class="bounce2"></div>
+        <div class="bounce3"></div>
+      </div>
+      <p class="text-center mt-3 text-muted">Analisi documenti in corso...</p>
+    </div>
+  </div>
+</main>
 
-        <title>{% if title %}Sigla | {{ title }}{% else %}Sigla{% endif %}</title>
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
+        crossorigin="anonymous"></script>
 
-	</head>
-    <body class="d-flex flex-column h-100">
-		
-		<header id="pageHeader" class="position-absolute w-100 bg-white">
-		</header>
-		
-		<main class="flex-shrink-0">
-		<!-- Start Main content -->
-            <div class="container">
-                {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                    {% endfor %}
-                {% endif %}
-                {% endwith %}
-        
-                {# application content needs to be provided in the app_content block #}
-				<div id = "spinner" class = "overlay">
-					<div class="spinner">
-						<div class="bounce1"></div>
-						<div class="bounce2"></div>
-						<div class="bounce3"></div>
-					</div>
-				</div>
-            </div>
-		<!-- End Main content -->
-		</main>	
+<script>
+(function () {
+  // Avvio analisi dopo il paint dello spinner
+  function startAnalysis() {
+    fetch("{{ url_for('analizza') }}", { method: "GET", credentials: "same-origin" })
+      .then(function () {
+        // Quando /analizza termina, vai su /result
+        window.location.replace("{{ url_for('result') }}");
+      })
+      .catch(function (e) {
+        console.error("Errore fetch /analizza:", e);
+        window.location.replace("{{ url_for('result') }}");
+      });
+  }
 
-		<!-- Bootstrap 5 JavaScript -->
-		<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" 
-			    integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" 
-				crossorigin="anonymous"></script>
+  // Assicura che lo spinner sia renderizzato prima di partire
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      requestAnimationFrame(function () {
+        setTimeout(startAnalysis, 50);
+      });
+    });
+  } else {
+    requestAnimationFrame(function () {
+      setTimeout(startAnalysis, 50);
+    });
+  }
+})();
+</script>
 
-		<!-- get custom JavaScript -->
-        <script>
-			function navigate() {
-				window.location.href = 'result';
-			}
-			fetch('analizza').then(navigate);
-		</script>
-    
-	</body>
+</body>
 </html>

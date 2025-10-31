@@ -1,79 +1,140 @@
-main > .container {
-    padding: 30px 50px 0px 50px;
+/* --- Base layout --- */
+* {
+    box-sizing: border-box;
 }
 
+body {
+    margin: 0;
+    font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    color: #222;
+}
 
-/* https://tobiasahlin.com/spinkit */
+.container {
+    max-width: 980px;
+    margin: 24px auto;
+    padding: 0 16px;
+}
+
+.text-muted, .muted {
+    color: #6b7280;
+}
+
+/* --- Overlay loading (spinner) --- */
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    z-index: 1000;
+}
 
 .spinner {
-    margin: 100px auto 0;
+    margin: 16px auto;
     width: 70px;
     text-align: center;
-    transform: translateY(-50px); /* per compensare margine della pagina */
-  }
-  
-  .spinner > div {
-    width: 20px; /* 18px */
-    height: 20px;
-    /*background-color: #333;*/
-    background-color: #3498db; /* Blue */
-  
-    border-radius: 100%;
-    display: inline-block;
-    -webkit-animation: sk-bouncedelay 1.4s infinite ease-in-out both;
-    animation: sk-bouncedelay 1.4s infinite ease-in-out both;
-  }
-  
-  .spinner .bounce1 {
-    -webkit-animation-delay: -0.32s;
-    animation-delay: -0.32s;
-  }
-  
-  .spinner .bounce2 {
-    -webkit-animation-delay: -0.16s;
-    animation-delay: -0.16s;
-  }
-  
-  @-webkit-keyframes sk-bouncedelay {
-    0%, 80%, 100% { -webkit-transform: scale(0) }
-    40% { -webkit-transform: scale(1.0) }
-  }
-  
-  @keyframes sk-bouncedelay {
-    0%, 80%, 100% { 
-      -webkit-transform: scale(0);
-      transform: scale(0);
-    } 40% { 
-      -webkit-transform: scale(1.0);
-      transform: scale(1.0);
-    }
-  }
-
-.overlay{
-    position: fixed;   /* fissa il div rispetto alla finestra */
-    top: 0;
-    left: 0;
-    width: 100vw;      /* 100% larghezza viewport */
-    height: 100vh;     /* 100% altezza viewport */
-    /*background: rgba(52, 152, 219, 0.1); /* colore semi-trasparente */
-    /*backdrop-filter: blur(1px);     /* applica il blur */
-    z-index: 9999;  
-    justify-content: center;    /* centro orizzontale */
-    align-items: center;        /* centro verticale */
-    display: flex;
 }
 
-.result{
-  position: fixed;   /* fissa il div rispetto alla finestra */
-  top: 0;
-  left: 0;
-  width: 100vw;      /* 100% larghezza viewport */
-  height: 100vh;     /* 100% altezza viewport */
-  /*background: rgba(52, 152, 219, 0.1); /* colore semi-trasparente */
-  /*backdrop-filter: blur(1px);     /* applica il blur */
-  z-index: 9999;  
-  justify-content: center;    /* centro orizzontale */
-  align-items: center;        /* centro verticale */
-  display: flex;
-  flex-direction: column;
+    .spinner > div {
+        width: 14px;
+        height: 14px;
+        background-color: #0b5cff;
+        border-radius: 100%;
+        display: inline-block;
+        animation: bouncedelay 1.4s infinite ease-in-out both;
+    }
+
+    .spinner .bounce1 {
+        animation-delay: -0.32s;
+    }
+
+    .spinner .bounce2 {
+        animation-delay: -0.16s;
+    }
+
+@keyframes bouncedelay {
+    0%, 80%, 100% {
+        transform: scale(0);
+    }
+
+    40% {
+        transform: scale(1.0);
+    }
+}
+
+/* --- Result header --- */
+.result-box h1 {
+    margin: 0 0 6px;
+    font-size: 22px;
+}
+
+.result-box p {
+    margin: 0 0 12px;
+}
+
+/* --- Review table --- */
+.table-responsive {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+}
+
+.table thead th {
+    background: #f9fafb;
+}
+
+.align-middle td, .align-middle th {
+    vertical-align: middle;
+}
+
+/* --- Buttons --- */
+.btn-success {
+    background: #16a34a;
+    border-color: #16a34a;
+}
+
+    .btn-success:hover {
+        filter: brightness(0.95);
+    }
+
+/* (opzionale) badge confidenze */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #fff;
+}
+
+    .badge.ok {
+        background: #16a34a;
+    }
+
+    .badge.mid {
+        background: #2563eb;
+    }
+
+    .badge.warn {
+        background: #f59e0b;
+        color: #111;
+    }
+
+    .badge.err {
+        background: #ef4444;
+    }
+
+.text-success {
+    color: #28a745 !important;
+    font-weight: 600;
+}
+
+.text-muted {
+    font-size: 1.2rem;
+    color: #6c757d !important;
+}
+
+td:nth-child(5) { /* colonna con il valore del campo presente in CRM */
+    color: #555;
+    font-style: italic;
 }
