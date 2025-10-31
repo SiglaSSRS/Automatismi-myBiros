@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="it" class="h-100">
 <head>
     <meta charset="utf-8">
@@ -14,103 +14,156 @@
 </head>
 
 <body class="d-flex flex-column h-100">
-    <main class="flex-shrink-0">
-        <div class="container py-4">
+<main class="flex-shrink-0">
+    <div class="container py-4">
 
-            <!-- Spinner di caricamento iniziale -->
-            {% if not esito and not show_review %}
-            <div id="spinner" class="overlay">
-                <div class="spinner">
-                    <div class="bounce1"></div>
-                    <div class="bounce2"></div>
-                    <div class="bounce3"></div>
-                </div>
-                <p class="text-center mt-3 text-muted">Analisi documenti in corso...</p>
+        <!-- Spinner di caricamento iniziale -->
+        {% if not esito and not show_review %}
+        <div id="spinner" class="overlay">
+            <div class="spinner">
+                <div class="bounce1"></div>
+                <div class="bounce2"></div>
+                <div class="bounce3"></div>
             </div>
-            {% endif %}
-
-            <!-- Messaggio risultato -->
-            <section class="{{ 'd-flex justify-content-center align-items-center vh-100' if (esito and not show_review) else 'result-box mt-4' }}">
-                <div class="{{ 'text-center' if (esito and not show_review) else '' }}">
-                    {% if esito %}
-                    <h1 class="text-success">{{ esito }}</h1>
-                    {% if messaggio %}
-                    <p class="text-muted">{{ messaggio }}</p>
-                    {% endif %}
-                    {% endif %}
-                </div>
-            </section>
-
-            <!-- Sezione di review -->
-            {% if show_review and plan %}
-            <hr class="my-4">
-            <h2>Conferma i campi da aggiornare nel CRM</h2>
-
-            <form id="review-form" method="POST" action="{{ url_for('conferma_aggiornamento') }}">
-                <input type="hidden" name="token" value="{{ token }}">
-                <input type="hidden" name="id_contatto" value="{{ id_contatto }}">
-
-                <div class="table-responsive mt-3">
-                    <table class="table table-striped align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th scope="col" style="width:5%;"></th>
-                                <th scope="col">Documento</th>
-                                <th scope="col">Campo</th>
-                                <th scope="col">Valore</th>
-                                <th scope="col">Valore CRM</th>
-                                <th scope="col">Confidence</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for r in plan %}
-                            <tr>
-                                <td>
-                                    <input class="form-check-input row-check" type="checkbox"
-                                           name="apply_fields"
-                                           value="{{ r.campo }}|{{ r.valore_nuovo }}"
-                                           id="chk{{ loop.index }}">
-                                </td>
-                                <td>{{ r.tipo_doc_descrittivo }}</td>
-                                <td>{{ r.label }}</td>
-                                <td>{{ r.valore_nuovo }}</td>
-                                <td>{{ r.valore_attuale or "—" }}</td>
-                                <td>
-                                    {% set conf = r.confidence|float %}
-                                    {% if conf >= 98 %}
-                                    <span class="badge ok">{{ "%.2f"|format(conf) }}%</span>
-                                    {% elif conf >= 90 %}
-                                    <span class="badge mid">{{ "%.2f"|format(conf) }}%</span>
-                                    {% elif conf >= 70 %}
-                                    <span class="badge warn">{{ "%.2f"|format(conf) }}%</span>
-                                    {% else %}
-                                    <span class="badge err">{{ "%.2f"|format(conf) }}%</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="text-end mt-3">
-                    <button id="btn-conferma" type="submit" class="btn btn-success px-4">
-                        <i class="bi bi-check-circle"></i> Conferma aggiornamento
-                    </button>
-                </div>
-            </form>
-            {% endif %}
-
+            <p class="text-center mt-3 text-muted">Analisi documenti in corso...</p>
         </div>
-    </main>
+        {% endif %}
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
-            integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
-            crossorigin="anonymous"></script>
+        <!-- Messaggio risultato -->
+        <section class="{{ 'd-flex justify-content-center align-items-center vh-100' if (esito and not show_review) else 'result-box mt-4' }}">
+            <div class="{{ 'text-center' if (esito and not show_review) else '' }}">
+                {% if esito %}
+                <h1 class="text-success">{{ esito }}</h1>
+                {% if messaggio %}
+                <p class="text-muted">{{ messaggio }}</p>
+                {% endif %}
+                {% endif %}
+            </div>
+        </section>
 
-    <!-- Script custom -->
-    <script src="{{ url_for('static', filename='custom.js') }}"></script>
+        <!-- Sezione di review -->
+        {% if show_review and plan %}
+        <hr class="my-4">
+        <h2>Conferma i campi da aggiornare nel CRM</h2>
+
+        <form id="review-form" method="POST" action="{{ url_for('conferma_aggiornamento') }}">
+            <input type="hidden" name="token" value="{{ token }}">
+            <input type="hidden" name="id_contatto" value="{{ id_contatto }}">
+
+            <!-- ACCORDION PER TIPO DOCUMENTO -->
+            <div class="accordion mt-3" id="accordionDocs">
+                {% for gruppo in plan|sort(attribute='tipo_doc_descrittivo')|groupby('tipo_doc_descrittivo') %}
+                    {% set tipo = gruppo.grouper %}
+                    {% set righe = gruppo.list %}
+                    {% set acc_id = 'acc' ~ loop.index %}
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="heading-{{ acc_id }}">
+                            <button class="accordion-button {{ 'collapsed' if not loop.first }}"
+                                    type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#collapse-{{ acc_id }}"
+                                    aria-expanded="{{ 'true' if loop.first else 'false' }}"
+                                    aria-controls="collapse-{{ acc_id }}">
+                                {{ tipo }} <span class="ms-2 badge bg-secondary">{{ righe|length }}</span>
+                            </button>
+                        </h2>
+                        <div id="collapse-{{ acc_id }}"
+                             class="accordion-collapse collapse {{ 'show' if loop.first }}"
+                             aria-labelledby="heading-{{ acc_id }}"
+                             data-bs-parent="#accordionDocs">
+                            <div class="accordion-body">
+                                <!-- Select all per gruppo -->
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <small class="text-muted">Seleziona i campi da applicare</small>
+                                    <div class="form-check">
+                                        <input class="form-check-input select-all-group" type="checkbox"
+                                               id="selall-{{ acc_id }}"
+                                               data-group="{{ acc_id }}">
+                                        <label class="form-check-label" for="selall-{{ acc_id }}">
+                                            Seleziona tutto
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table table-striped align-middle table-sm">
+                                        <thead class="table-light">
+                                        <tr>
+                                            <th style="width:5%;"></th>
+                                            <th>Campo</th>
+                                            <th>Valore</th>
+                                            <th>Valore CRM</th>
+                                            <th>Confidence</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody>
+                                        {% for r in righe %}
+                                            {% set conf = r.confidence|float %}
+                                            <tr class="row-group-{{ acc_id }}">
+                                                <td>
+                                                    <input class="form-check-input row-check"
+                                                           type="checkbox"
+                                                           name="apply_fields"
+                                                           value="{{ r.campo }}|{{ r.valore_nuovo }}"
+                                                           id="chk{{ acc_id }}-{{ loop.index }}">
+                                                </td>
+                                                <td>{{ r.label }}</td>
+                                                <td>{{ r.valore_nuovo }}</td>
+                                                <td>{{ r.valore_attuale or "—" }}</td>
+                                                <td>
+                                                    {% if conf >= 98 %}
+                                                        <span class="badge ok">{{ "%.2f"|format(conf) }}%</span>
+                                                    {% elif conf >= 90 %}
+                                                        <span class="badge mid">{{ "%.2f"|format(conf) }}%</span>
+                                                    {% elif conf >= 70 %}
+                                                        <span class="badge warn">{{ "%.2f"|format(conf) }}%</span>
+                                                    {% else %}
+                                                        <span class="badge err">{{ "%.2f"|format(conf) }}%</span>
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+
+            <div class="text-end mt-3">
+                <button id="btn-conferma" type="submit" class="btn btn-success px-4">
+                    <i class="bi bi-check-circle"></i> Conferma aggiornamento
+                </button>
+            </div>
+        </form>
+        {% endif %}
+
+    </div>
+</main>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
+        crossorigin="anonymous"></script>
+
+<!-- Script custom -->
+<script src="{{ url_for('static', filename='custom.js') }}"></script>
+
+<!-- Mini-script: select-all per sezione -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.select-all-group').forEach(function (sel) {
+        sel.addEventListener('change', function () {
+            const group = this.getAttribute('data-group');
+            const rows = document.querySelectorAll('.row-group-' + group + ' .row-check');
+            rows.forEach(cb => cb.checked = sel.checked);
+        });
+    });
+});
+</script>
 
 </body>
 </html>

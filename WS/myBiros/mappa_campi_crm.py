@@ -14,7 +14,7 @@ Questo file è pensato per essere manutenuto facilmente:
 """
 
 MAPPA_CAMPI = {
-    "ID_CARD": [
+    "CAI": [
         {"campo_crm": "first_name",             "campo_mybiros": "name"},
         {"campo_crm": "last_name",              "campo_mybiros": "surname"},
         {"campo_crm": "release_date",           "campo_mybiros": "issue_date"},
@@ -28,7 +28,7 @@ MAPPA_CAMPI = {
         {"campo_crm": "codice_fiscale_c",       "campo_mybiros": "fiscal_code"},
     ],
 
-    "DRIVER_LICENSE": [
+    "PAT": [
         {"campo_crm": "first_name",             "campo_mybiros": "name"},
         {"campo_crm": "last_name",              "campo_mybiros": "surname"},
         {"campo_crm": "document_number",        "campo_mybiros": "id_number"},
@@ -38,7 +38,7 @@ MAPPA_CAMPI = {
         {"campo_crm": "sesso_c",                "campo_mybiros": "sex"},
     ],
 
-    "PASSPORT": [
+    "PAS": [
         {"campo_crm": "first_name",             "campo_mybiros": "name"},
         {"campo_crm": "last_name",              "campo_mybiros": "surname"},
         {"campo_crm": "document_number",        "campo_mybiros": "id_number"},
@@ -50,7 +50,7 @@ MAPPA_CAMPI = {
         {"campo_crm": "primary_address_street", "campo_mybiros": "address"},
     ],
 
-    "HEALTH_CARD": [
+    "TS": [
         {"campo_crm": "first_name",             "campo_mybiros": "name"},
         {"campo_crm": "last_name",              "campo_mybiros": "surname"},
         {"campo_crm": "codice_fiscale_c",       "campo_mybiros": "fiscal_code"},
@@ -58,7 +58,7 @@ MAPPA_CAMPI = {
         {"campo_crm": "sesso_c",                "campo_mybiros": "sex"},
     ],
 
-    "RESIDENCE_PERMIT": [
+    "PS": [
         {"campo_crm": "first_name",             "campo_mybiros": "name"},
         {"campo_crm": "last_name",              "campo_mybiros": "surname"},
         {"campo_crm": "sesso_c",                "campo_mybiros": "sex"},
@@ -141,11 +141,11 @@ MAPPA_CAMPI = {
 
 # Descrizioni codici documento
 DOC_DESCR = {
-    "ID_CARD":          "Carta d'identità",
-    "DRIVER_LICENSE":    "Patente di guida",
-    "PASSPORT":         "Passaporto",
-    "HEALTH_CARD":      "Tessera sanitaria",
-    "RESIDENCE_PERMIT": "Permesso di soggiorno",
+    "CAI":              "Carta d'identità",
+    "PAT":              "Patente di guida",
+    "PAS":              "Passaporto",
+    "TS":               "Tessera sanitaria",
+    "PS":               "Permesso di soggiorno",
     "OBIS":             "Certificato Obis",
     "BP":               "Busta paga",
     "CP":               "Cedolino pensione",

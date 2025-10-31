@@ -495,10 +495,27 @@ def _build_plan_minimo(id_contatto, output_documenti):
                     except Exception as e:
                         print(f"[CRM] errore lettura {campo_crm} su {id_contatto}: {e}")
 
+                    # --- Formattazione solo per la UI (non influenza aggiornaCRM) ---
+                    # Serve per fa vedere valori più leggibili nella result.html
+                    # Sia i numeri che sopratutto le date
+
+                    if isinstance(valore_attuale, (int, float)):
+                        if isinstance(valore_attuale, float) and not valore_attuale.is_integer():
+                            valore_attuale = f"{valore_attuale:.2f}"
+                        else:
+                            valore_attuale = str(int(valore_attuale))
+                    elif isinstance(valore_attuale, str) and len(valore_attuale) == 10 and "-" in valore_attuale:
+                        # Prova a formattare date tipo 2025-10-31
+                        try:
+                            from datetime import datetime
+                            valore_attuale = datetime.strptime(valore_attuale, "%Y-%m-%d").strftime("%d/%m/%Y")
+                        except Exception:
+                            pass
+
                 # Recupera descrizione leggibile del documento
                 tipo_doc_descrittivo = mappa_campi_crm.DOC_DESCR.get(tipo_doc, tipo_doc)
 
-                # Aggiungi al piano (mantengo struttura esistente; aggiungo info opzionali utili)
+                # Aggiungi al piano 
                 plan.append({
                     "tipo_doc": tipo_doc,
                     "tipo_doc_descrittivo": tipo_doc_descrittivo,
@@ -507,8 +524,8 @@ def _build_plan_minimo(id_contatto, output_documenti):
                     "valore_nuovo": valore,
                     "confidence": conf,
                     "origine": "myBiros",
-                    "campo_crm": campo_crm,               # opzionale, utile in review
-                    "valore_attuale": valore_attuale,     # opzionale, utile in review
+                    "campo_crm": campo_crm,                
+                    "valore_attuale": valore_attuale,      
                 })
 
     return plan
@@ -633,7 +650,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
 
     #Carta identita, Patente, Codice Fiscale, Passaporto
     #--------------------------------------------------------------------------------------------
-    category_field = next((c for c in ret if c["tipo"].lower().replace(" ", "_") == "category"), None)
+    #category_field = next((c for c in ret if c["tipo"].lower().replace(" ", "_") == "category"), None)
 
     #Per vedere i campi reali recuperari da myBiros per implementare vari tipi di documenti
     #--------------------------------------------------------------------------------------------
@@ -641,11 +658,11 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
     #logger.info(f"Valore di conf_map in aggiornaCRM: {conf_map}")
 
     #Tutti i documenti di riconoscimento
-    if category_field:
-        category_val = str(category_field["valore"]).strip().lower()
+    if tipo in ("CAI", "PAT", "PAS", "TS", "PS"):
+        #category_val = str(category_field["valore"]).strip().lower()
 
         #CARTA DI IDENTITA --------------------------------------------------
-        if category_val == "id_card":
+        if tipo == "CAI":
 
             #logger.info("DEBUG - CAMPI MAPPATI")
             #logger.info(mappa_variabili)
@@ -674,7 +691,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             #            ITALIA_LOMBARDIA	ITALIA_LOMBARDIA_VA	    ITALIA_LOMBARDIA_VA_A085
             #--------------------------------------------------------------------------------------------
 
-            birth_place = mappa_variabili["birth_place"]
+            birth_place = mappa_variabili.get("birth_place", None)
 
             #Decodifica comune di nascita
             birth_place = (
@@ -694,7 +711,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
                 add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),    mappa_variabili, conf_map,  isDate=False)
                 add_campi("man", campi, "nascita_nazione_c",     parts[0],               mappa_variabili, conf_map,  isDate=False)
              
-            nationality = mappa_variabili["nationality"]
+            nationality = mappa_variabili.get("nationality", None)
             if(nationality):
                 if(nationality == "ITA"):
                     add_campi("man", campi, "cittadinanza_c",     "Italiana",            mappa_variabili, conf_map,  isDate=False)
@@ -705,41 +722,44 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             add_campi("ai",      campi, "birthdate",             "birth_date",       mappa_variabili, conf_map,  isDate=True)
             add_campi("ai",      campi, "municipality_of_issue", "issue_place",      mappa_variabili, conf_map,  isDate=False)
 
-            issue_place = mappa_variabili["issue_place"]
-
-            #Decodifica comune di residenza
-            issue_place = (
-                unicodedata.normalize("NFD", issue_place)  # separa lettere e accenti
-                .encode("ascii", "ignore")                 # rimuove accenti
-                .decode("ascii")                           # torna in stringa normale
-                .replace("'", " ")                         # sostituisce apostrofi con spazio
-                .upper()                                   # tutto maiuscolo
-                .replace(" ", "_")                         # sostituisce spazi con underscore
-            )
-
-            issue_place = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", issue_place, False)
+            issue_place = mappa_variabili.get("issue_place", None)
             if(issue_place):
-                parts = issue_place.split("_")
-                if(parts[0] == "ITALIA"):
-                     add_campi("man", campi, "residenza_nazione_c",     parts[0],             mappa_variabili, conf_map,  isDate=False)
-                     add_campi("man", campi, "residenza_regione_c",     "_".join(parts[:2]),  mappa_variabili, conf_map,  isDate=False)
 
-                     add_campi("man", campi, "residenza_provincia_c",   "_".join(parts[:3]),  mappa_variabili, conf_map,  isDate=False)
-                     add_campi("man", campi, "primary_address_state",   "_".join(parts[:3]),  mappa_variabili, conf_map,  isDate=False)
+                #Decodifica comune di residenza
+                issue_place = (
+                    unicodedata.normalize("NFD", issue_place)  # separa lettere e accenti
+                    .encode("ascii", "ignore")                 # rimuove accenti
+                    .decode("ascii")                           # torna in stringa normale
+                    .replace("'", " ")                         # sostituisce apostrofi con spazio
+                    .upper()                                   # tutto maiuscolo
+                    .replace(" ", "_")                         # sostituisce spazi con underscore
+                )
 
-                     add_campi("ai",  campi, "primary_address_city",    "residence",          mappa_variabili, conf_map,  isDate=False)
-                     add_campi("man", campi, "primary_address_country", parts[0],             mappa_variabili, conf_map,  isDate=False)
-                     add_campi("ai",  campi, "primary_address_street",  "address",            mappa_variabili, conf_map,  isDate=False)
+                issue_place = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", issue_place, False)
+                if(issue_place):
+                    parts = issue_place.split("_")
+                    if(parts[0] == "ITALIA"):
+                         add_campi("man", campi, "residenza_nazione_c",     parts[0],             mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "residenza_regione_c",     "_".join(parts[:2]),  mappa_variabili, conf_map,  isDate=False)
 
-                     residence = mappa_variabili["residence"]
-                     ret_cap = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI_CAP",  "CAP", "COMUNE", residence, False)
-                     if(ret_cap):
-                        add_campi("man", campi, "primary_address_postalcode", ret_cap, mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "residenza_provincia_c",   "_".join(parts[:3]),  mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "primary_address_state",   "_".join(parts[:3]),  mappa_variabili, conf_map,  isDate=False)
 
-                else:
-                     add_campi("man", campi, "residenza_nazione_c",     "ESTERO",         mappa_variabili, conf_map,  isDate=False)
-                     add_campi("man", campi, "residenza_regione_c",     "ESTERO",         mappa_variabili, conf_map,  isDate=False)
-                     add_campi("man", campi, "residenza_provincia_c",   "EE",             mappa_variabili, conf_map,  isDate=False)
+                         add_campi("ai",  campi, "primary_address_city",    "residence",          mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "primary_address_country", parts[0],             mappa_variabili, conf_map,  isDate=False)
+                         add_campi("ai",  campi, "primary_address_street",  "address",            mappa_variabili, conf_map,  isDate=False)
+
+                         
+                         residence = mappa_variabili.get("residence", None)
+                         if(residence):
+                             ret_cap = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI_CAP",  "CAP", "COMUNE", residence, False)
+                             if(ret_cap):
+                                add_campi("man", campi, "primary_address_postalcode", ret_cap, mappa_variabili, conf_map,  isDate=False)
+
+                    else:
+                         add_campi("man", campi, "residenza_nazione_c",     "ESTERO",         mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "residenza_regione_c",     "ESTERO",         mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "residenza_provincia_c",   "EE",             mappa_variabili, conf_map,  isDate=False)
 
             #hralphas_siglacredit.contacts
             add_campi("ai",     campi, "codice_fiscale_c",      "fiscal_code",      mappa_variabili, conf_map,  isDate=False)
@@ -753,7 +773,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             
 
         #PATENTE --------------------------------------------------
-        if category_val == "driver_license":
+        if tipo == "PAT":
 
             #logger.info("DEBUG - CAMPI MAPPATI")
             #logger.info(mappa_variabili)
@@ -773,25 +793,25 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             add_campi("ai", campi, "birthdate",             "birth_date",                   mappa_variabili, conf_map,  isDate=True)
             add_campi("ai", campi, "sesso_c",               "sex",                          mappa_variabili, conf_map,  isDate=False)
 
-            birth_place = mappa_variabili["birth_place"]
+            birth_place = mappa_variabili.get("birth_place", None)
+            if(birth_place):
+                #Decodifica comune di nascita
+                birth_place = (
+                    unicodedata.normalize("NFD", birth_place)  # separa lettere e accenti
+                    .encode("ascii", "ignore")                 # rimuove accenti
+                    .decode("ascii")                           # torna in stringa normale
+                    .replace("'", " ")                         # sostituisce apostrofi con spazio
+                    .upper()                                   # tutto maiuscolo
+                    .replace(" ", "_")                         # sostituisce spazi con underscore
+                )
 
-            #Decodifica comune di nascita
-            birth_place = (
-                unicodedata.normalize("NFD", birth_place)  # separa lettere e accenti
-                .encode("ascii", "ignore")                 # rimuove accenti
-                .decode("ascii")                           # torna in stringa normale
-                .replace("'", " ")                         # sostituisce apostrofi con spazio
-                .upper()                                   # tutto maiuscolo
-                .replace(" ", "_")                         # sostituisce spazi con underscore
-            )
-
-            nascita_comune_c = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", birth_place, False)
-            if(nascita_comune_c):
-                parts = nascita_comune_c.split("_")
-                add_campi("man", campi, "nascita_comune_c",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),   mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),    mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_nazione_c",     parts[0],               mappa_variabili, conf_map,  isDate=False)            
+                nascita_comune_c = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", birth_place, False)
+                if(nascita_comune_c):
+                    parts = nascita_comune_c.split("_")
+                    add_campi("man", campi, "nascita_comune_c",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),   mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),    mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_nazione_c",     parts[0],               mappa_variabili, conf_map,  isDate=False)            
 
             #Forzo comunque in quando nella patente myBiros non torna nulla, e se fosse gia inserito meglio pulirlo in quanto
             #potrebbe essere presente un documento gia inserito
@@ -803,10 +823,8 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             else: 
                 logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
 
-            
-
         #PASSAPORTO --------------------------------------------------
-        if category_val == "passport":
+        if tipo == "PAS":
 
             #logger.info("DEBUG - CAMPI MAPPATI")
             #logger.info(mappa_variabili)
@@ -827,66 +845,69 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             add_campi("ai", campi, "sesso_c",               "sex",                     mappa_variabili, conf_map,  isDate=False)
 
             #Decodifica comune di residenza
-            residence = mappa_variabili["residence"]
-            residence = (
-                unicodedata.normalize("NFD", residence)    # separa lettere e accenti
-                .encode("ascii", "ignore")                 # rimuove accenti
-                .decode("ascii")                           # torna in stringa normale
-                .replace("'", " ")                         # sostituisce apostrofi con spazio
-                .upper()                                   # tutto maiuscolo
-                .replace(" ", "_")                         # sostituisce spazi con underscore
-            )
+            residence = mappa_variabili.get("residence", None)
 
-            residence = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", residence, False)
             if(residence):
-                parts = residence.split("_")
-                if(parts[0] == "ITALIA"):
-                     add_campi("man", campi, "residenza_nazione_c",     parts[0],             mappa_variabili, conf_map,  isDate=False)
-                     add_campi("man", campi, "residenza_regione_c",     "_".join(parts[:2]),  mappa_variabili, conf_map,  isDate=False)
+                residence = (
+                    unicodedata.normalize("NFD", residence)    # separa lettere e accenti
+                    .encode("ascii", "ignore")                 # rimuove accenti
+                    .decode("ascii")                           # torna in stringa normale
+                    .replace("'", " ")                         # sostituisce apostrofi con spazio
+                    .upper()                                   # tutto maiuscolo
+                    .replace(" ", "_")                         # sostituisce spazi con underscore
+                )
 
-                     add_campi("man", campi, "residenza_provincia_c",   "_".join(parts[:3]),  mappa_variabili, conf_map,  isDate=False)
-                     add_campi("man", campi, "primary_address_state",   "_".join(parts[:3]),  mappa_variabili, conf_map,  isDate=False)
+                residence = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", residence, False)
+                if(residence):
+                    parts = residence.split("_")
+                    if(parts[0] == "ITALIA"):
+                         add_campi("man", campi, "residenza_nazione_c",     parts[0],             mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "residenza_regione_c",     "_".join(parts[:2]),  mappa_variabili, conf_map,  isDate=False)
 
-                     add_campi("ai",  campi, "primary_address_city",    "residence",          mappa_variabili, conf_map,  isDate=False)
-                     add_campi("man", campi, "primary_address_country", parts[0],             mappa_variabili, conf_map,  isDate=False)
-                     add_campi("ai",  campi, "primary_address_street",  "address",            mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "residenza_provincia_c",   "_".join(parts[:3]),  mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "primary_address_state",   "_".join(parts[:3]),  mappa_variabili, conf_map,  isDate=False)
 
-                     residence = mappa_variabili["residence"]
-                     ret_cap = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI_CAP",  "CAP", "COMUNE", residence, False)
-                     if(ret_cap):
-                        add_campi("man", campi, "primary_address_postalcode", ret_cap, mappa_variabili, conf_map,  isDate=False)
+                         add_campi("ai",  campi, "primary_address_city",    "residence",          mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "primary_address_country", parts[0],             mappa_variabili, conf_map,  isDate=False)
+                         add_campi("ai",  campi, "primary_address_street",  "address",            mappa_variabili, conf_map,  isDate=False)
 
-                else:
-                     add_campi("man", campi, "residenza_nazione_c",     "ESTERO",         mappa_variabili, conf_map,  isDate=False)
-                     add_campi("man", campi, "residenza_regione_c",     "ESTERO",         mappa_variabili, conf_map,  isDate=False)
-                     add_campi("man", campi, "residenza_provincia_c",   "EE",             mappa_variabili, conf_map,  isDate=False)
+                         residence = mappa_variabili["residence"]
+                         ret_cap = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI_CAP",  "CAP", "COMUNE", residence, False)
+                         if(ret_cap):
+                            add_campi("man", campi, "primary_address_postalcode", ret_cap, mappa_variabili, conf_map,  isDate=False)
+
+                    else:
+                         add_campi("man", campi, "residenza_nazione_c",     "ESTERO",         mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "residenza_regione_c",     "ESTERO",         mappa_variabili, conf_map,  isDate=False)
+                         add_campi("man", campi, "residenza_provincia_c",   "EE",             mappa_variabili, conf_map,  isDate=False)
 
 
             #Decodifica comune di nascita
-            birth_place = mappa_variabili["birth_place"]
-            birth_place = (
-                unicodedata.normalize("NFD", birth_place)  # separa lettere e accenti
-                .encode("ascii", "ignore")                 # rimuove accenti
-                .decode("ascii")                           # torna in stringa normale
-                .replace("'", " ")                         # sostituisce apostrofi con spazio
-                .upper()                                   # tutto maiuscolo
-                .replace(" ", "_")                         # sostituisce spazi con underscore
-            )
+            birth_place = mappa_variabili.get("birth_place", None)
+            if(birth_place):
+                birth_place = (
+                    unicodedata.normalize("NFD", birth_place)  # separa lettere e accenti
+                    .encode("ascii", "ignore")                 # rimuove accenti
+                    .decode("ascii")                           # torna in stringa normale
+                    .replace("'", " ")                         # sostituisce apostrofi con spazio
+                    .upper()                                   # tutto maiuscolo
+                    .replace(" ", "_")                         # sostituisce spazi con underscore
+                )
 
-            nascita_comune_c = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", birth_place, False)
-            if(nascita_comune_c):
-                parts = nascita_comune_c.split("_")
-                add_campi("man", campi, "COMUNE",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),   mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),    mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_nazione_c",     parts[0],               mappa_variabili, conf_map,  isDate=False)
+                nascita_comune_c = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", birth_place, False)
+                if(nascita_comune_c):
+                    parts = nascita_comune_c.split("_")
+                    add_campi("man", campi, "COMUNE",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),   mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),    mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_nazione_c",     parts[0],               mappa_variabili, conf_map,  isDate=False)
              
-            nationality = mappa_variabili["nationality"]
-            if(nationality):
-                if(nationality == "ITA"):
-                    add_campi("man", campi, "cittadinanza_c",     "Italiana",            mappa_variabili, conf_map,  isDate=False)
-                else:
-                    add_campi("man", campi, "cittadinanza_c",     "NonItaliana",         mappa_variabili, conf_map,  isDate=False)
+                nationality = mappa_variabili.get("nationality", None)
+                if(nationality):
+                    if(nationality == "ITA"):
+                        add_campi("man", campi, "cittadinanza_c",     "Italiana",            mappa_variabili, conf_map,  isDate=False)
+                    else:
+                        add_campi("man", campi, "cittadinanza_c",     "NonItaliana",         mappa_variabili, conf_map,  isDate=False)
 
             #Forzo comunque in quando nella patente myBiros non torna nulla, e se fosse gia inserito meglio pulirlo in quanto
             #potrebbe essere presente un documento gia inserito
@@ -901,7 +922,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             
 
         #DOCUMENTO CODICE FISCALE --------------------------------------------------
-        if category_val == "health_card":
+        if tipo == "TS":
 
             #logger.info("DEBUG - CAMPI MAPPATI")
             #logger.info(mappa_variabili)
@@ -917,23 +938,24 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             add_campi("ai", campi, "sesso_c",               "sex",              mappa_variabili, conf_map,  isDate=False)
 
             #Decodifica comune di nascita
-            birth_place = mappa_variabili["birth_place"]
-            birth_place = (
-                unicodedata.normalize("NFD", birth_place)  # separa lettere e accenti
-                .encode("ascii", "ignore")                 # rimuove accenti
-                .decode("ascii")                           # torna in stringa normale
-                .replace("'", " ")                         # sostituisce apostrofi con spazio
-                .upper()                                   # tutto maiuscolo
-                .replace(" ", "_")                         # sostituisce spazi con underscore
-            )
+            birth_place = mappa_variabili.get("birth_place", None)
+            if(birth_place):
+                birth_place = (
+                    unicodedata.normalize("NFD", birth_place)  # separa lettere e accenti
+                    .encode("ascii", "ignore")                 # rimuove accenti
+                    .decode("ascii")                           # torna in stringa normale
+                    .replace("'", " ")                         # sostituisce apostrofi con spazio
+                    .upper()                                   # tutto maiuscolo
+                    .replace(" ", "_")                         # sostituisce spazi con underscore
+                )
 
-            nascita_comune_c = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", birth_place, False)
-            if(nascita_comune_c):
-                parts = nascita_comune_c.split("_")
-                add_campi("man", campi, "COMUNE",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),   mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),    mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_nazione_c",     parts[0],               mappa_variabili, conf_map,  isDate=False)
+                nascita_comune_c = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", birth_place, False)
+                if(nascita_comune_c):
+                    parts = nascita_comune_c.split("_")
+                    add_campi("man", campi, "COMUNE",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),   mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),    mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_nazione_c",     parts[0],               mappa_variabili, conf_map,  isDate=False)
 
             if aggiornaContatto(id, campi): 
                 logger.info("CRM AGGIORNATO")
@@ -944,7 +966,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             
 
         #PERMESSO DI SOGGIORNO --------------------------------------------------
-        if category_val == "residence_permit":            
+        if tipo == "PS":
 
             #logger.info("DEBUG - CAMPI MAPPATI")
             #logger.info(mappa_variabili)
@@ -958,7 +980,7 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             add_campi("ai", campi, "sesso_c",               "sex",              mappa_variabili, conf_map,  isDate=False)
             add_campi("ai", campi, "codice_fiscale_c",      "fiscal_code",      mappa_variabili, conf_map,  isDate=False)
 
-            nationality = mappa_variabili["nationality"]
+            nationality = mappa_variabili.get("nationality", None)
             if(nationality):
                 if(nationality == "ITA"):
                     add_campi("man", campi, "cittadinanza_c",     "Italiana",          mappa_variabili, conf_map,  isDate=False)
@@ -971,25 +993,26 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
             add_campi("ai", campi, "expiration_date",       "expire_date",             mappa_variabili, conf_map,  isDate=True)
             add_campi("ai", campi, "birthdate",             "birth_date",              mappa_variabili, conf_map,  isDate=True)
             
-            birth_place = mappa_variabili["birth_place"]
 
-            #Decodifica comune di nascita
-            birth_place = (
-                unicodedata.normalize("NFD", birth_place)  # separa lettere e accenti
-                .encode("ascii", "ignore")                 # rimuove accenti
-                .decode("ascii")                           # torna in stringa normale
-                .replace("'", " ")                         # sostituisce apostrofi con spazio
-                .upper()                                   # tutto maiuscolo
-                .replace(" ", "_")                         # sostituisce spazi con underscore
-            )
+            birth_place = mappa_variabili.get("birth_place", None)
+            if(birth_place):
+                #Decodifica comune di nascita
+                birth_place = (
+                    unicodedata.normalize("NFD", birth_place)  # separa lettere e accenti
+                    .encode("ascii", "ignore")                 # rimuove accenti
+                    .decode("ascii")                           # torna in stringa normale
+                    .replace("'", " ")                         # sostituisce apostrofi con spazio
+                    .upper()                                   # tutto maiuscolo
+                    .replace(" ", "_")                         # sostituisce spazi con underscore
+                )
 
-            nascita_comune_c = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", birth_place, False)
-            if(nascita_comune_c):
-                parts = nascita_comune_c.split("_")
-                add_campi("man", campi, "nascita_comune_c",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),   mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),    mappa_variabili, conf_map,  isDate=False)
-                add_campi("man", campi, "nascita_nazione_c",     parts[0],               mappa_variabili, conf_map,  isDate=False)
+                nascita_comune_c = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", birth_place, False)
+                if(nascita_comune_c):
+                    parts = nascita_comune_c.split("_")
+                    add_campi("man", campi, "nascita_comune_c",      nascita_comune_c,       mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),   mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),    mappa_variabili, conf_map,  isDate=False)
+                    add_campi("man", campi, "nascita_nazione_c",     parts[0],               mappa_variabili, conf_map,  isDate=False)
 
 
             if aggiornaContatto(id, campi): 
@@ -1022,33 +1045,36 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
 
         campi = []
 
-        sede_pensione = mappa_variabili["sede_pensione"]
+        sede_pensione = mappa_variabili.get("sede_pensione", None)
 
-        #Decodifica comune dell'ente pensione
-        sede_pensione = (
-            unicodedata.normalize("NFD", sede_pensione)  # separa lettere e accenti
-            .encode("ascii", "ignore")                 # rimuove accenti
-            .decode("ascii")                           # torna in stringa normale
-            .replace("'", " ")                         # sostituisce apostrofi con spazio
-            .upper()                                   # tutto maiuscolo
-            .replace(" ", "_")                         # sostituisce spazi con underscore
-        )
-
-        sede_pensione = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_ENTI_INPS",  "COD_ENTE", "ENTE", sede_pensione, False)
         if(sede_pensione):
-            add_campi("man", campi, "site_c",               sede_pensione,           mappa_variabili, conf_map,  isDate=False)
+            #Decodifica comune dell'ente pensione
+            sede_pensione = (
+                unicodedata.normalize("NFD", sede_pensione)  # separa lettere e accenti
+                .encode("ascii", "ignore")                 # rimuove accenti
+                .decode("ascii")                           # torna in stringa normale
+                .replace("'", " ")                         # sostituisce apostrofi con spazio
+                .upper()                                   # tutto maiuscolo
+                .replace(" ", "_")                         # sostituisce spazi con underscore
+            )
 
-        add_campi("man",campi, "professione_ c",             "P",                     mappa_variabili, conf_map,  isDate=False)
+            sede_pensione = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_ENTI_INPS",  "COD_ENTE", "ENTE", sede_pensione, False)
+            if(sede_pensione):
+                add_campi("man", campi, "site_c",               sede_pensione,           mappa_variabili, conf_map,  isDate=False)
+
+        add_campi("man",campi, "professione_ c",            "P",                     mappa_variabili, conf_map,  isDate=False)
         add_campi("ai", campi, "codice_fiscale_c",          "codice_fiscale",        mappa_variabili, conf_map,  isDate=False)
         add_campi("ai", campi, "reddito_netto_mensile_c",   "netto_obis",            mappa_variabili, conf_map,  isDate=False)
 
         #Calcolo codice categioria pensione trovato nella tabella LEATABE codtab 8366
-        query              = "SELECT DATI1,CODELE1 from LEATABE WHERE CODTAB = 8366"
-        categoria_pens     = mappa_variabili["categoria_pens"]
-        cod_categoria_pens = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "CODELE1", "DATI1", categoria_pens, False)
+        query = "SELECT DATI1,CODELE1 from LEATABE WHERE CODTAB = 8366"
+        
+        categoria_pens = mappa_variabili.get("categoria_pens", None)
+        if(categoria_pens):
+            cod_categoria_pens = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "CODELE1", "DATI1", categoria_pens, False)
 
-        if(cod_categoria_pens):
-            add_campi("man", campi, "category_code_c",      cod_categoria_pens,      mappa_variabili, conf_map,  isDate=False)
+            if(cod_categoria_pens):
+                add_campi("man", campi, "category_code_c",   cod_categoria_pens,     mappa_variabili, conf_map,  isDate=False)
 
         add_campi("ai", campi, "certificate_number_c",      "chiave_pens",           mappa_variabili, conf_map,  isDate=False)
 
@@ -1131,30 +1157,31 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         """
 
         #Solitamente myBiros in questo campo ritorna la partita iva e provo a cercarla in 3b
-        codice_fiscale_azienda = mappa_variabili["codice_fiscale_azienda"]
+        codice_fiscale_azienda = mappa_variabili.get("codice_fiscale_azienda", None)
 
-        clean = "".join(c for c in codice_fiscale_azienda if c.isdigit())
-        if clean:
-            numero_piva = int(clean)
-        else:
-            numero_piva = None 
-
-        categoria = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "AMM_CDCATEG", "IVA", numero_piva, False)
-
-        cat_atc = None
-        if(categoria):
-            if      categoria == "STA":    cat_atc = "Q_STA"
-            elif    categoria == "NTF":    cat_atc = "Q_NTF"
-            elif    categoria == "PAP":    cat_atc = "Q_PAP"
-            elif    categoria == "PRG":    cat_atc = "Q_PRG"
-            elif    categoria == "PRI":    cat_atc = "Q_PRI"
-            elif    categoria == "PRP":    cat_atc = "Q_PRP"
-            elif    categoria == "PUB":    cat_atc = "Q_PUB"
+        if(codice_fiscale_azienda):
+            clean = "".join(c for c in codice_fiscale_azienda if c.isdigit())
+            if clean:
+                numero_piva = int(clean)
             else:
-                cat_atc = None
+                numero_piva = None 
 
-            if(cat_atc):
-                add_campi("man", campi, "categoria_atc_c", cat_atc, mappa_variabili, conf_map,isDate=False)
+            categoria = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "AMM_CDCATEG", "IVA", numero_piva, False)
+
+            cat_atc = None
+            if(categoria):
+                if      categoria == "STA":    cat_atc = "Q_STA"
+                elif    categoria == "NTF":    cat_atc = "Q_NTF"
+                elif    categoria == "PAP":    cat_atc = "Q_PAP"
+                elif    categoria == "PRG":    cat_atc = "Q_PRG"
+                elif    categoria == "PRI":    cat_atc = "Q_PRI"
+                elif    categoria == "PRP":    cat_atc = "Q_PRP"
+                elif    categoria == "PUB":    cat_atc = "Q_PUB"
+                else:
+                    cat_atc = None
+
+                if(cat_atc):
+                    add_campi("man", campi, "categoria_atc_c", cat_atc, mappa_variabili, conf_map,isDate=False)
 
         if aggiornaContatto(id, campi): 
             logger.info("CRM AGGIORNATO")
@@ -1241,10 +1268,10 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         campi = []
 
         #Lettura myBiros
-        vedova                  = to_bool(mappa_variabili["vedovo/a"])
-        coniugato_convivente    = to_bool(mappa_variabili["coniugato/convivente"])
-        celibe_nubile           = to_bool(mappa_variabili["celibe/nubile"]) 
-        separato_divorziato     = to_bool(mappa_variabili["separato/divorziato"])
+        vedova                  = to_bool(mappa_variabili.get("vedovo/a", False))
+        coniugato_convivente    = to_bool(mappa_variabili.get("coniugato/convivente", False))
+        celibe_nubile           = to_bool(mappa_variabili.get("celibe/nubile", False))
+        separato_divorziato     = to_bool(mappa_variabili.get("separato/divorziato", False))
 
         #Nel CRM il valore deve essere ben definito in base allo schema sotto
         if(vedova):
@@ -1265,8 +1292,8 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         add_campi("man", campi, "figli_c",                      "componenti_figli",        mappa_variabili, conf_map,  isDate=False)
         add_campi("man", campi, "di_cui_minori_di_3_anni_c",    "componenti_minori",       mappa_variabili, conf_map,  isDate=False)
  
-        pensionato          = to_bool(mappa_variabili["pensionato"])
-        dipendente_privato  = to_bool(mappa_variabili["dipendente_privato"])
+        pensionato          = to_bool(mappa_variabili.get("pensionato", False))
+        dipendente_privato  = to_bool(mappa_variabili.get("dipendente_privato", False))
 
         if(pensionato): 
             add_campi("man", campi, "professione_c",    "P",     mappa_variabili, conf_map,  isDate=False)
@@ -1363,25 +1390,26 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         #add_campi("ai",  campi, "cud_indennita_acconti_anticipazi",  "tfr_(801)", mappa_variabili, conf_map,  isDate=False) 
         
         #Def comumne di nascita
-        comune_nascita_dipendente = mappa_variabili["comune_nascita_dipendente"]
+        comune_nascita_dipendente = mappa_variabili.get("comune_nascita_dipendente", None)
 
-        #Decodifica comune di nascita
-        comune_nascita_dipendente = (
-            unicodedata.normalize("NFD", comune_nascita_dipendente)  # separa lettere e accenti
-            .encode("ascii", "ignore")                 # rimuove accenti
-            .decode("ascii")                           # torna in stringa normale
-            .replace("'", " ")                         # sostituisce apostrofi con spazio
-            .upper()                                   # tutto maiuscolo
-            .replace(" ", "_")                         # sostituisce spazi con underscore
-        )
-
-        comune_nascita_dipendente = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", comune_nascita_dipendente, False)
         if(comune_nascita_dipendente):
-            parts = comune_nascita_dipendente.split("_")
-            add_campi("man", campi, "nascita_comune_c",      comune_nascita_dipendente,       mappa_variabili, conf_map,  isDate=False)
-            add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),            mappa_variabili, conf_map,  isDate=False)
-            add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),             mappa_variabili, conf_map,  isDate=False)
-            add_campi("man", campi, "nascita_nazione_c",     parts[0],                        mappa_variabili, conf_map,  isDate=False)        
+            #Decodifica comune di nascita
+            comune_nascita_dipendente = (
+                unicodedata.normalize("NFD", comune_nascita_dipendente)  # separa lettere e accenti
+                .encode("ascii", "ignore")                 # rimuove accenti
+                .decode("ascii")                           # torna in stringa normale
+                .replace("'", " ")                         # sostituisce apostrofi con spazio
+                .upper()                                   # tutto maiuscolo
+                .replace(" ", "_")                         # sostituisce spazi con underscore
+            )
+
+            comune_nascita_dipendente = cerca_valore_in_db_ora(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, "CRM_DECOD_COMUNI",  "COMUNE", "DESCR_COMUNE", comune_nascita_dipendente, False)
+            if(comune_nascita_dipendente):
+                parts = comune_nascita_dipendente.split("_")
+                add_campi("man", campi, "nascita_comune_c",      comune_nascita_dipendente,       mappa_variabili, conf_map,  isDate=False)
+                add_campi("man", campi, "nascita_provincia_c",   "_".join(parts[:-1]),            mappa_variabili, conf_map,  isDate=False)
+                add_campi("man", campi, "nascita_regione_c",     "_".join(parts[:2]),             mappa_variabili, conf_map,  isDate=False)
+                add_campi("man", campi, "nascita_nazione_c",     parts[0],                        mappa_variabili, conf_map,  isDate=False)        
 
 
         #Calcolo categoria dipendente in base alla tabella ANATERZ e ANAAMM00F
@@ -1395,37 +1423,36 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         """
 
         #Solitamente myBiros in questo campo ritorna la partita iva e provo a cercarla in 3b
-        codice_fiscale_azienda = mappa_variabili["azienda_codice_fiscale"]
-
-        clean = "".join(c for c in codice_fiscale_azienda if c.isdigit())
-        if clean:
-            numero_piva = int(clean)
-        else:
-            numero_piva = None 
-
-        categoria = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "AMM_CDCATEG", "IVA", numero_piva, False)
-
-        cat_atc = None
-        if(categoria):
-            if      categoria == "STA":    cat_atc = "Q_STA"
-            elif    categoria == "NTF":    cat_atc = "Q_NTF"
-            elif    categoria == "PAP":    cat_atc = "Q_PAP"
-            elif    categoria == "PRG":    cat_atc = "Q_PRG"
-            elif    categoria == "PRI":    cat_atc = "Q_PRI"
-            elif    categoria == "PRP":    cat_atc = "Q_PRP"
-            elif    categoria == "PUB":    cat_atc = "Q_PUB"
+        codice_fiscale_azienda = mappa_variabili.get("azienda_codice_fiscale", None)
+        if(codice_fiscale_azienda):
+            clean = "".join(c for c in codice_fiscale_azienda if c.isdigit())
+            if clean:
+                numero_piva = int(clean)
             else:
-                cat_atc = None
+                numero_piva = None 
 
-            if(cat_atc):
-                add_campi("man", campi, "categoria_atc_c", cat_atc, mappa_variabili, conf_map,isDate=False)
+            categoria = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "AMM_CDCATEG", "IVA", numero_piva, False)
+
+            cat_atc = None
+            if(categoria):
+                if      categoria == "STA":    cat_atc = "Q_STA"
+                elif    categoria == "NTF":    cat_atc = "Q_NTF"
+                elif    categoria == "PAP":    cat_atc = "Q_PAP"
+                elif    categoria == "PRG":    cat_atc = "Q_PRG"
+                elif    categoria == "PRI":    cat_atc = "Q_PRI"
+                elif    categoria == "PRP":    cat_atc = "Q_PRP"
+                elif    categoria == "PUB":    cat_atc = "Q_PUB"
+                else:
+                    cat_atc = None
+
+                if(cat_atc):
+                    add_campi("man", campi, "categoria_atc_c", cat_atc, mappa_variabili, conf_map,isDate=False)
 
         if aggiornaContatto(id, campi): 
             logger.info("CRM AGGIORNATO")
             did_update = True
         else: 
             logger.error("ERRORE NELL'AGGIORNAMENTO DEL CRM")
-
           
 
     #CERITFICATO STIPENDIO
@@ -1487,30 +1514,30 @@ def aggiornaCRM(id: str, ret, tipo: str) -> bool:
         """
 
         #Solitamente myBiros in questo campo ritorna la partita iva e provo a cercarla in 3b
-        codice_fiscale_azienda = mappa_variabili["vat_azienda"]
-
-        clean = "".join(c for c in codice_fiscale_azienda if c.isdigit())
-        if clean:
-            numero_piva = int(clean)
-        else:
-            numero_piva = None 
-
-        categoria = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "AMM_CDCATEG", "IVA", numero_piva, False)
-
-        cat_atc = None
-        if(categoria):
-            if      categoria == "STA":    cat_atc = "Q_STA"
-            elif    categoria == "NTF":    cat_atc = "Q_NTF"
-            elif    categoria == "PAP":    cat_atc = "Q_PAP"
-            elif    categoria == "PRG":    cat_atc = "Q_PRG"
-            elif    categoria == "PRI":    cat_atc = "Q_PRI"
-            elif    categoria == "PRP":    cat_atc = "Q_PRP"
-            elif    categoria == "PUB":    cat_atc = "Q_PUB"
+        codice_fiscale_azienda = mappa_variabili.get("vat_azienda", None)
+        if(codice_fiscale_azienda):
+            clean = "".join(c for c in codice_fiscale_azienda if c.isdigit())
+            if clean:
+                numero_piva = int(clean)
             else:
-                cat_atc = None
+                numero_piva = None 
 
-            if(cat_atc):
-                add_campi("man", campi, "categoria_atc_c", cat_atc, mappa_variabili, conf_map,isDate=False)
+            categoria = cerca_valore_in_db_ora_query(DSN_CQS, USERNAME_CQS, PASSWORD_CQS, query,  "AMM_CDCATEG", "IVA", numero_piva, False)
+
+            cat_atc = None
+            if(categoria):
+                if      categoria == "STA":    cat_atc = "Q_STA"
+                elif    categoria == "NTF":    cat_atc = "Q_NTF"
+                elif    categoria == "PAP":    cat_atc = "Q_PAP"
+                elif    categoria == "PRG":    cat_atc = "Q_PRG"
+                elif    categoria == "PRI":    cat_atc = "Q_PRI"
+                elif    categoria == "PRP":    cat_atc = "Q_PRP"
+                elif    categoria == "PUB":    cat_atc = "Q_PUB"
+                else:
+                    cat_atc = None
+
+                if(cat_atc):
+                    add_campi("man", campi, "categoria_atc_c", cat_atc, mappa_variabili, conf_map,isDate=False)
 
         if aggiornaContatto(id, campi): 
             logger.info("CRM AGGIORNATO")
@@ -1539,44 +1566,62 @@ def index():
     # landing con spinner
     return render_template("loading.html", title="Analisi documenti")
 
-
 @app.route("/analizza", methods=["GET"])
 def analizza():
-    logger.info("SESSION: %s", session)
-    id_contatto = session.get("id")
+    t0 = dt.now(tz.utc)
+    try:
+        logger.info("SESSION (start analizza): %s", dict(session))
+        id_contatto = session.get("id")
 
-    documenti = scaricaAllegatiContatto(id_contatto)
+        # Scarico allegati
+        documenti = scaricaAllegatiContatto(id_contatto)
 
-    if documenti:
-        output = []
-        logger.info("DOCUMENTI SCARICATI: %s", len(documenti))
-        for doc in documenti:
-            #logger.info("%s: %s, %s, %s", doc["nome"], doc["tipo"], doc["document_type"], doc["estensione"])
-            dati = analizzaDocumento(doc["tipo"], doc["document_type"], doc["b64"], doc["estensione"])
-            if dati:
-                output.append({"tipo": doc["tipo"], "dati": dati})
-            else:
-                logger.warning("ERRORE NELL'ESTRAZIONE DATI O NESSUN DATO ESTRATTO")
+        if documenti:
+            logger.info("DOCUMENTI SCARICATI: %s", len(documenti))
+            output = []
 
-        if output:
-            #logger.info("OUTPUT: %s", output)
-            session["esito"] = "Analizzato 1 documento" if len(output) == 1 else f"Analizzati {len(output)} documenti"
-            session["messaggio"] = "Ricaricare la pagina del CRM per verificare i dati estratti."
-            # → Review interattiva
-            return proponi_aggiornamentoCRM(id_contatto, output)
+            for doc in documenti:
+                # logger.debug("%s: %s, %s, %s", doc["nome"], doc["tipo"], doc["document_type"], doc["estensione"])
+                dati = analizzaDocumento(doc["tipo"], doc["document_type"], doc["b64"], doc["estensione"])
+                if dati:
+                    output.append({"tipo": doc["tipo"], "dati": dati})
+                else:
+                    logger.warning("ERRORE NELL'ESTRAZIONE DATI O NESSUN DATO ESTRATTO")
 
-        logger.warning("DOCUMENTI SCARICATI MA NESSUN DATO ESTRATTO")
-        session["esito"] = "Errore nell'estrazione o nessun dato estratto"
-        session["messaggio"] = "Verificare i documenti presenti nel CRM e riprovare."
+            if output:
+                # Messaggio informativo
+                session["esito"] = "Analizzato 1 documento" if len(output) == 1 else f"Analizzati {len(output)} documenti"
+                session["messaggio"] = "Seleziona i campi da aggiornare e conferma."
+                # → Avvio review interattiva
+                return proponi_aggiornamentoCRM(id_contatto, output)
 
-    else:
-        logger.warning("NESSUN DOCUMENTO SCARICATO")
-        session["esito"] = "Errore nella ricerca o nessun documento trovato"
-        session["messaggio"] = "Verificare i documenti presenti nel CRM e riprovare."
+            # Nessun dato estratto da documenti presenti → pulisco review
+            logger.warning("DOCUMENTI SCARICATI MA NESSUN DATO ESTRATTO")
+            session["esito"] = "Errore nell'estrazione o nessun dato estratto"
+            session["messaggio"] = "Verificare i documenti presenti nel CRM e riprovare."
+            _cleanup_review_session()
+            session["show_review"] = False
 
-    logger.info("TEMPO ELABORAZIONE: %s", str(dt.now(tz.utc) - session["start"])[:-5])
-    return []
+        else:
+            # Nessun documento scaricato → pulisco review
+            logger.warning("NESSUN DOCUMENTO SCARICATO")
+            session["esito"] = "Errore nella ricerca o nessun documento trovato"
+            session["messaggio"] = "Verificare i documenti presenti nel CRM e riprovare."
+            _cleanup_review_session()
+            session["show_review"] = False
 
+    except Exception as e:
+        logger.exception("Errore in /analizza: %s", e)
+        session["esito"] = "Errore durante l'analisi"
+        session["messaggio"] = "Si è verificato un errore imprevisto. Riprovare."
+        _cleanup_review_session()
+        session["show_review"] = False
+
+    finally:
+        logger.info("TEMPO ELABORAZIONE: %s", str(dt.now(tz.utc) - t0)[:-5])
+
+    # In tutti i casi “non-OK” arrivo qui e vado a /result (senza review)
+    return redirect(url_for("result"))
 
 @app.route("/result", methods=["GET"])
 def result():
